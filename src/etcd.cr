@@ -2,6 +2,7 @@ require "log"
 
 require "./etcd/api"
 require "./etcd/client"
+require "./protobufs/*"
 
 module Etcd
   Log = ::Log.for(self)
