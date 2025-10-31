@@ -26,21 +26,28 @@ class Etcd::Cluster
 
   # POST cluster/member/promote
   def member_promote(id : UInt64)
-    request = stub.member_promote(Etcdserverpb::MemberPromoteRequest.new(id: id))
-    (request.members || [] of Etcdserverpb::Member).map do |member|
-      Model::Members.from_grpc(member)
+    response = stub.member_promote(Etcdserverpb::MemberPromoteRequest.new(id: id))
+    (response.members || [] of Etcdserverpb::Member).map do |member|
+      Model::Member.from_grpc(member)
     end
   end
 
   # POST cluster/member/remove
   def member_remove(id : UInt64)
-    response = client.api.post("/cluster/member/remove", {ID: id}).body
-    Model::Cluster::Members.from_json(response).members
+    response = stub.member_remove(Etcdserverpb::MemberRemoveRequest.new(id: id))
+    (response.members || [] of Etcdserverpb::Member).map do |member|
+      Model::Member.from_grpc(member)
+    end
   end
 
   # POST cluster/member/update
   def member_update(id : UInt64, peer_urls : Array(String))
-    response = client.api.post("/cluster/member/update", {ID: id, peerURLs: peer_urls}).body
-    Model::Cluster::Members.from_json(response).members
+    request = Etcdserverpb::MemberUpdateRequest.new(
+      id: id,
+      peer_urls: peer_urls,
+    )
+    (stub.member_update(request).members || [] of Etcdserverpb::Member).map do |member|
+      Model::Member.from_grpc(member)
+    end
   end
 end
