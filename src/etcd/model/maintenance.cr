@@ -1,62 +1,103 @@
 require "./base"
 
 module Etcd::Model
+  alias GrpcAlarmAction = Etcdserverpb::AlarmRequest::AlarmAction
+  alias GrpcAlarmType = Etcdserverpb::AlarmType
+
   enum AlarmAction
     GET
     ACTIVATE
     DEACTIVATE
+
+    def self.from_grpc(type : GrpcAlarmAction)
+      case type
+      when .get?
+        GET
+      when .activate?
+        ACTIVATE
+      when .deactivate?
+        DEACTIVATE
+      else
+        raise "Unknown alarm action: #{type}"
+      end
+    end
+
+    def to_grpc
+      case self
+      when .get?
+        GrpcAlarmAction::GET
+      when .activate?
+        GrpcAlarmAction::ACTIVATE
+      when .deactivate?
+        GrpcAlarmAction::DEACTIVATE
+      else
+        raise "Unknown alarm action: #{self}"
+      end
+    end
   end
 
   enum AlarmType
     NONE
     NOSPACE
     CORRUPT
+
+    def self.from_grpc(type : GrpcAlarmType)
+      case type
+      when .none?
+        NONE
+      when .nospace?
+        NOSPACE
+      when .corrupt?
+        CORRUPT
+      else
+        raise "Unknown alarm type: #{type}"
+      end
+    end
+
+    def to_grpc
+      case self
+      when .none?
+        GrpcAlarmType::NONE
+      when .nospace?
+        GrpcAlarmType::NOSPACE
+      when .corrupt?
+        GrpcAlarmType::CORRUPT
+      else
+        raise "Unknown alarm type: #{self}"
+      end
+
+    end
   end
 
-  struct Alarm < Base
-    getter alarm : AlarmType
-    @[JSON::Field(converter: Etcd::Model::StringTypeConverter(UInt64))]
-    getter member_id : UInt64
+  struct Alarm
+    getter! alarm : AlarmType
+    getter! member_id : UInt64
+
+    def initialize(@alarm, @member_id)
+    end
   end
 
-  struct Alarms < WithHeader
-    getter alarms : Array(Alarm)
-  end
-
-  struct Revision < WithHeader
-    @[JSON::Field(converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter compact_revision : Int64
-    @[JSON::Field(converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter hash : Int64
-  end
-
-  struct Snapshot < Base
-    getter error : Error?
-    getter result : SnapshotResult?
-  end
-
-  struct SnapshotResult < WithHeader
-    getter blob : String # Bytes
-    @[JSON::Field(converter: Etcd::Model::StringTypeConverter(UInt64))]
+  struct SnapshotResult
+    getter blob : Bytes # Bytes
     getter remaining_bytes : UInt64
+    getter version : String
+
+    def initialize(@blob, @remaining_bytes, @version)
+    end
   end
 
-  struct Status < WithHeader
-    @[JSON::Field(key: "dbSize", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter db_size : Int64
-    @[JSON::Field(key: "dbSizeInUse", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter db_size_in_use : Int64
-    getter errors : Array(String)?
-    @[JSON::Field(key: "isLearner")]
-    getter is_learner : Bool?
-    @[JSON::Field(converter: Etcd::Model::StringTypeConverter(UInt64))]
-    getter leader : UInt64
-    @[JSON::Field(key: "raftAppliedIndex", converter: Etcd::Model::StringTypeConverter(UInt64))]
-    getter raft_applied_index : UInt64
-    @[JSON::Field(key: "raftIndex", converter: Etcd::Model::StringTypeConverter(UInt64))]
-    getter raft_index : UInt64
-    @[JSON::Field(key: "raftTerm", converter: Etcd::Model::StringTypeConverter(UInt64))]
-    getter raft_term : UInt64
-    getter version : String
+  struct Status
+    getter! db_size : Int64
+    getter! db_size_in_use : Int64
+    getter! errors : Array(String)?
+    getter! is_learner : Bool?
+    getter! leader : UInt64
+    getter! raft_applied_index : UInt64
+    getter! raft_index : UInt64
+    getter! raft_term : UInt64
+    getter! version : String
+
+    def initialize(@db_size, @db_size_in_use, @errors, @is_learner, @leader, @raft_applied_index, @raft_index, @raft_term, @version)
+    end
   end
 end

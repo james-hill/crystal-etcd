@@ -1,4 +1,6 @@
 require "log"
+require "http2"
+require "grpc"
 
 require "./etcd/api"
 require "./etcd/client"

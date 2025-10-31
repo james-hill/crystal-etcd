@@ -1,34 +1,71 @@
 require "./model/maintenance"
 
 class Etcd::Maintenance
-  private getter client : Etcd::Client
+  getter stub : Etcdserverpb::Maintenance::Stub
 
-  def initialize(@client = Etcd::Client.new)
+  def initialize(config : GRPC::Config)
+    @stub = Etcdserverpb::Maintenance::Stub.new(config)
   end
 
-  def alarm(action : Model::AlarmAction, alarm : Model::AlarmType, member_id : UInt64)
-    response = client.api.post("/maintenance/alarm", {action: action, alarm: alarm, memberID: member_id}).body
-    Model::Alarms.from_json(response).alarms
+  def alarm(action : Model::AlarmAction, alarm : Model::AlarmType? = nil, member_id : UInt64? = nil)
+    request = Etcdserverpb::AlarmRequest.new(action: action.to_grpc)
+    if type = alarm
+      request.alarm = type.to_grpc
+    end
+
+    if mid = member_id
+      request.member_id = mid
+    end
+
+    (stub.alarm(request).alarms || [] of Etcdserverpb::AlarmMember).map do |alarm|
+      if type = alarm.alarm
+        Model::Alarm.new(
+          alarm: Model::AlarmType.from_grpc(type),
+          member_id: alarm.member_id,
+        )
+      else
+        raise "Alarm has no type"
+      end
+    end
   end
 
   def defragment
-    client.api.post("/maintenance/defragment").success?
+    stub.defragment(Etcdserverpb::DefragmentRequest.new).is_a?(Etcdserverpb::DefragmentResponse)
   end
 
   def hash(revision : String)
-    response = client.api.post("/maintenance/hash").body
-    Model::Revision.from_json(response)
+    stub.hash(::Etcdserverpb::HashRequest.new).hash
   end
 
+  # TODO: this deadlocks currently
   def snapshot
-    model = Model::Snapshot.from_json(client.api.post("/maintenance/snapshot").body)
-    raise Exception.new(model.error.not_nil!.to_s) if model.result.nil?
-    model.result
+    response = stub.snapshot(Etcdserverpb::SnapshotRequest.new)
+    if blob = response.blob
+      Model::SnapshotResult.new(
+        blob: blob,
+        remaining_bytes: response.remaining_bytes || 0_u64,
+        version: response.version,
+      )
+    else
+      raise "No blob in response"
+    end
   end
 
   # Queries status of etcd instance
   def status
-    Model::Status.from_json(client.api.post("/maintenance/status").body)
+    response = stub.status(Etcdserverpb::StatusRequest.new)
+
+    Model::Status.new(
+      db_size: response.db_size,
+      db_size_in_use: response.db_size_in_use,
+      errors: response.errors,
+      is_learner: response.is_learner,
+      leader: response.leader,
+      raft_applied_index: response.raft_applied_index,
+      raft_index: response.raft_index,
+      raft_term: response.raft_term,
+      version: response.version,
+    )
   end
 
   # Queries for current leader of the etcd cluster
@@ -37,6 +74,6 @@ class Etcd::Maintenance
   end
 
   def transfer_leadership(target_id : UInt64)
-    client.api.post("/maintenance/transfer_leadership", {targetID: target_id}).success?
+    stub.move_leadership(Etcdserverpb::MoveLeaderRequest.new(targetID: target_id)).is_a?(Etcdserverpb::MoveLeaderResponse)
   end
 end

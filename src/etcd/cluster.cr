@@ -1,19 +1,27 @@
-module Etcd::Cluster
-  private getter client : Etcd::Client
+require "./model/cluster"
 
-  def initialize(@client = Etcd::Client.new)
+class Etcd::Cluster
+  getter stub : Etcdserverpb::Cluster::Stub
+
+  def initialize(@config : GRPC::Config)
+    @stub = Etcdserverpb::Cluster::Stub.new(@config)
   end
 
   # POST cluster/member/add
   def member_add(is_learner : Bool, peer_urls : Array(String))
-    response = client.api.post("/cluster/member/add", {is_learner: is_learner, peerURLs: peer_urls}).body
-    Model::Cluster::MemberAdd.from_json(response)
+    response = stub.member_add(Etcdserverpb::MemberAddRequest.new(is_learner: is_learner, peer_urls: peer_urls))
+    Model::MemberAdd.new(
+      member: Model::Member.from_grpc(response.member),
+      members: (response.members || [] of Etcdserverpb::Member).map { |member| Model::Member.from_grpc(member) },
+    )
   end
 
   # POST cluster/member/list
   def member_list
-    response = client.api.post("/cluster/member/list").body
-    Model::Cluster::Members.from_json(response).members
+    response = stub.member_list(Etcdserverpb::MemberListRequest.new)
+    (response.members || [] of Etcdserverpb::Member).map do |member|
+      Model::Member.from_grpc(member)
+    end
   end
 
   # POST cluster/member/promote

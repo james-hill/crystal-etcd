@@ -3,79 +3,38 @@ require "http"
 require "./error"
 
 class Etcd::Api
-  # API version
-  property api_version : String
-  property token : String?
+  DEFAULT_HOST    = "localhost"
+  DEFAULT_PORT    = 2379
+  DEFAULT_DNS_TIMEOUT = 2.seconds
+  DEFAULT_CONNECT_TIMEOUT = 1.second
 
-  getter host : String = DEFAULT_HOST
-  getter port : Int32 = DEFAULT_PORT
   getter endpoints = [] of URI
-  getter tls_context : HTTP::Client::TLSContext?
-  getter username : String?
-  getter password : String?
+  getter tls_context : HTTP::Client::TLSContext = false
+  getter dns_timeout : Time::Span = DEFAULT_DNS_TIMEOUT
+  getter connect_timeout : Time::Span = DEFAULT_CONNECT_TIMEOUT
 
   # keeps track of the number of times we've tried to connect since the last successful request
   # (will be used to keep trying if we have multiple endpoints)
   getter retries_performed = 0
 
   # will be rebuilt on failure to point to the next endpoint
-  @connection : HTTP::Client? = nil
+  getter! config : GRPC::Config?
 
-  DEFAULT_HOST    = "localhost"
-  DEFAULT_PORT    = 2379
-  DEFAULT_VERSION = "v3"
-
-  def initialize(
-    url : URI,
-    api_version : String? = nil,
-    secure = false,
-    username : String? = nil,
-    password : String? = nil,
-    tls_context : HTTP::Client::TLSContext? = nil,
-  )
-    initialize([url], api_version, secure, username, password, tls_context)
-  end
+  # If we're using RBAC with username/password (NOT TLS cert common name auth) then we need a token
+  @auth_token : String? = nil
 
   def initialize(
     @endpoints : Array(URI),
-    api_version : String? = nil,
-    @secure = false,
     @username : String? = nil,
     @password : String? = nil,
-    @tls_context : HTTP::Client::TLSContext? = nil,
+    @tls_context : HTTP::Client::TLSContext = false,
+    @dns_timeout : Time::Span = DEFAULT_DNS_TIMEOUT,
+    @connect_timeout : Time::Span = DEFAULT_CONNECT_TIMEOUT,
+    @auth_token : String? = nil,
   )
-    @api_version = api_version || DEFAULT_VERSION
-    update_auth_token
+
   end
 
-  def initialize(
-    host : String = "localhost",
-    port : Int32? = nil,
-    api_version : String? = nil,
-    secure = false,
-    username : String? = nil,
-    password : String? = nil,
-    tls_context : HTTP::Client::TLSContext? = nil,
-  )
-    url = URI.new(
-      scheme: secure ? "https" : "http",
-      host: host,
-      port: port,
-    )
-    initialize(url, api_version, secure, username, password, tls_context)
-  end
-
-  # TODO: Add connection pooling.
-  # Currently, there's contention on the http connection
-  # Better to lease connections from a pool, and use the sclient object
-  # This way, we can reuse the same infra around the connection
-  # def spawn_connection
-  #   if url
-  #     HTTP::Client.new(url.as(URI))
-  #   else
-  #     HTTP::Client.new(host, port)
-  #   end
-  # end
 
   # Converts literals to string type
   protected def to_stringly(value)
@@ -101,7 +60,7 @@ class Etcd::Api
   def rotate_endpoints
     Log.debug { "Rotating endpoints" }
     @endpoints.rotate!
-    @connection = create_connection
+    @config = create_config
   end
 
   # current url (may change on failure)
@@ -109,42 +68,47 @@ class Etcd::Api
     @endpoints.first
   end
 
-  # special setter since we need to update the token
-  def set_username_password(username : String? = nil, password : String? = nil)
-    @username = username
-    @password = password
-    update_auth_token
+  # this is what we pass to all the services
+  def config
+    @config ||= create_config
   end
 
-  # auth/authenticate
-  def authenticate(name : String, password : String)
-    response = post("/auth/authenticate", {name: name, password: password}).body
-    Model::Token.from_json(response).token
+  def reconnect
+    rotate_endpoints
+    config.http2 = create_http2_client
   end
 
-  def update_auth_token
-    if (username = @username) && (password = @password)
-      @token = authenticate(username, password)
+  protected def create_config
+    GRPC::Config.new(http2: create_http2_client)
+  end
+
+  protected def create_http2_client
+    if (host = url.host) && (port = url.port)
+      client = GRPC::Client.new(
+        host: host,
+        port: port,
+        ssl_context: @tls_context || false,
+        dns_timeout: @dns_timeout,
+        connect_timeout: @connect_timeout,
+      )
+      if token = @auth_token
+        client.default_headers["Authorization"] = token
+      end
+
+      client
     else
-      @token = nil
+      raise Etcd::ConnectionError.new(url)
     end
   end
 
-  protected def connection
-    @connection ||= create_connection
-  end
-
-  protected def create_connection
-    client = HTTP::Client.new(
-      url,
-      tls: @tls_context
-    )
-
-    # TODO: make configurable
-    client.dns_timeout = 2.seconds
-    client.connect_timeout = 1.second
-
-    client
+  def auth_token=(token : String?)
+    if http2 = config.http2
+      if tok = token
+        http2.default_headers["Authorization"] = tok
+      else
+        http2.default_headers.delete("Authorization")
+      end
+    end
   end
 
   {% for method in %w(get post put delete) %}
@@ -161,7 +125,7 @@ class Etcd::Api
         body = "{}" if body.nil?
       {% end %}
 
-      if token = @token
+      if token = @auth_token
         if headers = headers || HTTP::Headers.new
           headers["Authorization"] = token
         end
@@ -181,7 +145,7 @@ class Etcd::Api
       end
 
       # if we may be looking at a rotated token, try one more time
-      if @token && response.status == HTTP::Status::UNAUTHORIZED
+      if @auth_token && response.status == HTTP::Status::UNAUTHORIZED
         Log.debug { "Attempting to re-authenticate after HTTP 401" }
         update_auth_token
         return {{method.id}}(path, headers, body)
@@ -204,7 +168,7 @@ class Etcd::Api
     def {{method.id}}(path, headers : HTTP::Headers? = nil, body : HTTP::Client::BodyType = nil)
       path = "/#{api_version}#{path}"
 
-      if token = @token
+      if token = @auth_token
         if headers = headers || HTTP::Headers.new
           headers["Authorization"] = token
         end
