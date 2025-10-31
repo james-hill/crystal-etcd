@@ -26,8 +26,10 @@ class Etcd::Cluster
 
   # POST cluster/member/promote
   def member_promote(id : UInt64)
-    response = client.api.post("/cluster/member/promote", {ID: id}).body
-    Model::Cluster::Members.from_json(response).members
+    request = stub.member_promote(Etcdserverpb::MemberPromoteRequest.new(id: id))
+    (request.members || [] of Etcdserverpb::Member).map do |member|
+      Model::Members.from_grpc(member)
+    end
   end
 
   # POST cluster/member/remove
