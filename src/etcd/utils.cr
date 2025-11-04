@@ -1,7 +1,7 @@
 module Etcd::Utils
   # Calculate range_end for given prefix
   def self.prefix_range_end(prefix)
-    bytes = Base64.decode(prefix)
+    bytes = prefix.to_slice.clone
     # Add to byte array, handling carry
     size = bytes.size
     carry = false
@@ -15,7 +15,7 @@ module Etcd::Utils
       end
     end
 
-    Base64.strict_encode(bytes)
+    bytes
   end
 
   def prefix_range_end(prefix)

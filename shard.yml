@@ -16,7 +16,7 @@ dependencies:
     github: spider-gazelle/tokenizer
   grpc:
     github: atlantis/grpc
-    commit: 845d084afbd721856eb4c7b91f71b496027b50bd
+    commit: 2d405028588dee02c6823f856dd995923ac2fbdb
   http2:
     github: ysbaddaden/http2
     commit: 969b60761458dd3cdd4d87c3823e8f50d0afc261
