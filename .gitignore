@@ -6,3 +6,4 @@
 /shard.lock
 .DS_Store
 /development/
+.env

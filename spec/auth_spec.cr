@@ -26,16 +26,16 @@ module Etcd
 
         # enable RBAC and confirm we can't do stuff anymore
         client.auth.enable
-        expect_raises(Etcd::ApiError) do
+        expect_raises(GRPC::BadStatus) do
           client.kv.put("#{TEST_PREFIX}/hello", "world")
         end
 
         # disable RBAC and confirm we can do stuff again
-        client.set_username_password(TEST_USER, TEST_PASSWORD)
+        client.authenticate(TEST_USER, TEST_PASSWORD)
         client.auth.disable
 
         # clear credentials and make sure we can still do stuff
-        client.set_username_password
+        client.authenticate
         response = client.kv.put("#{TEST_PREFIX}/hello", "world")
         response.should be_a Model::Put
       end
@@ -90,10 +90,17 @@ module Etcd
       end
     end
 
+    # You have to define these ENVs and use a valid cert for your local setup
     describe "TLS" do
       it "can be used", tags: "localonly" do
-        tls_context = OpenSSL::SSL::Context::Client.new
-        tls_context.verify_mode = OpenSSL::SSL::VerifyMode::NONE
+        tls_context = OpenSSL::SSL::Context::Client.from_hash(
+          {
+            "verify_mode" => "none",
+            "key" => ENV["ETCD_KEY_PATH"],
+            "cert" => ENV["ETCD_CERT_PATH"],
+            "ca" => ENV["ETCD_CA_PATH"],
+          }
+        )
 
         client = Etcd::Client.new(url: URI.parse("https://localhost:2379"), tls_context: tls_context)
         response = client.kv.put("#{TEST_PREFIX}/hello", "world")
@@ -102,3 +109,5 @@ module Etcd
     end
   end
 end
+
+

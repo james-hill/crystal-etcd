@@ -1,32 +1,27 @@
 require "./model/lease"
-require "./endpoint"
 
 module Etcd
-  class Lease < Endpoint
+  class Lease 
+    getter stub : Etcdserverpb::Lease::Stub
+
+    def initialize(@config : GRPC::Config)
+      @stub = Etcdserverpb::Lease::Stub.new(@config)
+    end
+
     # /kv/lease/leases
     # /lease/leases
     # Queries for all existing leases in an etcd cluster
     def leases
-      request(
-        "POST",
-        "/kv/lease/leases",
-        nil,
-        Model::Leases,
-      ).leases.map(&.id)
+      (stub.lease_leases(Etcdserverpb::LeaseLeasesRequest.new).leases || [] of Etcdserverpb::LeaseStatus).map do |lease|
+        lease.id
+      end
     end
 
     # /kv/lease/revoke
     # Revokes an etcd lease
     # id  Id of lease  Int64
     def revoke(id : Int64)
-      request(
-        "POST",
-        "/kv/lease/revoke",
-        {ID: id},
-        Model::EmptyResponse,
-      )
-
-      true
+      stub.lease_revoke(Etcdserverpb::LeaseRevokeRequest.new(id: id)).is_a?(Etcdserverpb::LeaseRevokeResponse)
     end
 
     # /kv/lease/timetolive
@@ -35,11 +30,8 @@ module Etcd
     # id            id of lease                         Int64
     # query_keys    query all the lease's keys for ttl  Bool
     def timetolive(id : Int64, query_keys = false)
-      request(
-        "POST",
-        "/kv/lease/timetolive",
-        {ID: id, keys: query_keys},
-        Model::TimeToLive,
+      Model::TimeToLive.from_grpc(
+        stub.lease_time_to_live(Etcdserverpb::LeaseTimeToLiveRequest.new(id: id, keys: query_keys))
       )
     end
 
@@ -48,24 +40,16 @@ module Etcd
     # ttl   ttl of granted lease                            Int64
     # id    id of 0 prompts etcd to assign any id to lease  UInt64
     def grant(ttl : Int64 = @ttl, id = 0)
-      request(
-        "POST",
-        "/lease/grant",
-        {TTL: ttl, ID: 0},
-        Model::Grant
-      )
+      Model::Grant.from_grpc(
+      stub.lease_grant(Etcdserverpb::LeaseGrantRequest.new(ttl: ttl, id: id))
+      )    
     end
 
     # /lease/keepalive
     # Requests persistence of lease.
     # Must be invoked periodically to avoid key loss.
     def keep_alive(id : Int64) : Int64?
-      request(
-        "POST",
-        "/lease/keepalive",
-        {ID: id},
-        Model::KeepAlive
-      ).result.try(&.ttl)
+      stub.lease_keep_alive(Etcdserverpb::LeaseKeepAliveRequest.new(id: id)).ttl
     end
   end
 end

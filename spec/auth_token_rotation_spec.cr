@@ -26,7 +26,7 @@ module Etcd
 
         # enable RBAC and confirm we can't do stuff anymore
         client.auth.enable
-        client.set_username_password(TEST_USER, TEST_PASSWORD)
+        client.authenticate(TEST_USER, TEST_PASSWORD)
 
         value = "world"
 

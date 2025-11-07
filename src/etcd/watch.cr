@@ -1,6 +1,3 @@
-require "tokenizer"
-require "simple_retry"
-
 require "./client"
 require "./model/watch"
 require "./utils"
@@ -8,16 +5,30 @@ require "./utils"
 class Etcd::Watch
   include Utils
 
+  RECONNECT_SECONDS = 5
+
   # Types for watch event filters
   enum Filter
     NOPUT    # filter put events
     NODELETE # filter delete events
+
+    def to_grpc
+      case self
+      when .noput?
+        Etcdserverpb::WatchCreateRequest::FilterType::NOPUT
+      when .nodelete?
+        Etcdserverpb::WatchCreateRequest::FilterType::NODELETE
+      end
+    end
   end
 
-  private getter client : Etcd::Client
+  getter stub : Etcdserverpb::KV::Stub
+  @config : GRPC::Config
 
-  def initialize(@client = Etcd::Client.new)
+  def initialize(@config : GRPC::Config)
+    @stub = Etcdserverpb::KV::Stub.new(@config)
   end
+
 
   # Watches keys by prefix, passing events to a supplied block.
   # Exposes a synchronous interface to the watch session via `Etcd::Watcher`
@@ -34,12 +45,12 @@ class Etcd::Watch
   #  - `prev_kv`
   #    If prev_kv is set, created watcher gets the previous Kv before the event happens.
   def watch_prefix(prefix, **opts, &block : Array(Model::WatchEvent) -> Void)
-    encoded_prefix = Base64.strict_encode(prefix)
-    opts = opts.merge({range_end: prefix_range_end(encoded_prefix), base64_keys: false})
-    watch(encoded_prefix, **opts, &block)
+    opts = opts.merge({range_end: prefix_range_end(prefix), base64_keys: false})
+    watch(prefix, **opts, &block)
   end
 
   # Watch a key in ETCD, returns a `Etcd::Watcher`
+  # NOTE: base64_keys is deprecated and does nothing!
   # Exposes a synchronous interface to the watch session via `Etcd::Watcher`
   #
   # *Options*
@@ -57,21 +68,16 @@ class Etcd::Watch
   #     If prev_kv is set, created watcher gets the previous Kv before the event happens.
   def watch(
     key,
-    range_end : String? = nil,
+    range_end : String | Slice(UInt8)? = nil,
     filters : Array(Watch::Filter)? = nil,
     start_revision : Int64? = nil,
     progress_notify : Bool? = nil,
     base64_keys : Bool = true,
     &block : Array(Model::WatchEvent) -> Void
   ) : Watcher
-    if base64_keys
-      key = Base64.strict_encode(key)
-      range_end = range_end.try &->Base64.strict_encode(String)
-    end
-
     Watcher.new(
       key: key,
-      create_api: ->@client.spawn_api,
+      config: @config,
       range_end: range_end,
       filters: filters,
       start_revision: start_revision,
@@ -95,8 +101,7 @@ class Etcd::Watch
     Log = ::Log.for(self)
 
     getter key : String
-    private getter create_api : Proc(Etcd::Api)
-    private getter api : Etcd::Api
+    private getter config : GRPC::Config
     private getter block : Proc(Array(Model::WatchEvent), Void)
     private getter range_end : String?
     private getter filters : Array(Watch::Filter)?
@@ -106,17 +111,30 @@ class Etcd::Watch
     private property event_channel : Channel(Array(Model::WatchEvent)) { Channel(Array(Model::WatchEvent)).new }
 
     getter? watching : Bool = false
+    getter watch_id : Int64? = nil
+    getter stream_id : Int32? = nil
+
+    getter stub : Etcdserverpb::Watch::Stub
 
     def initialize(
       @key,
-      @create_api = ->Etcd::Api.new,
-      @range_end = nil,
+      @config = GRPC::Config,
+      range_end = nil,
       @filters = nil,
       @start_revision = nil,
       @progress_notify = nil,
       &@block : Array(Model::WatchEvent) -> Void
     )
-      @api = create_api.call
+      @stub = Etcdserverpb::Watch::Stub.new(@config)
+
+      @range_end = case range_end
+      when String
+        range_end
+      when Slice(UInt8)
+        String.new(range_end)
+      else
+        nil
+      end
     end
 
     # Pass events to captured block
@@ -131,105 +149,67 @@ class Etcd::Watch
     # Start the watcher
     def start
       raise Etcd::WatchError.new "Already watching `#{key}`" if watching?
-      Log.context.set({key: Base64.decode_string(key), range_end: range_end.try &->Base64.decode_string(String)})
+      Log.context.set({key: key, range_end: range_end})
 
       spawn { forward_events }
 
-      # Check out from the thread pool here
-      post_body = {
-        create_request: {
-          :key             => key,
-          :range_end       => range_end,
-          :filters         => filters,
-          :start_revision  => start_revision,
-          :progress_notify => progress_notify,
-        }.compact,
-      }
-      @watching = true
-      SimpleRetry.try_to(
-        base_interval: 50.milliseconds,
-        max_interval: 10.seconds,
-        randomise: 100.milliseconds
-      ) do
-        if watching?
-          begin
-            api.post("/watch", HTTP::Headers{"Connection" => "keep-alive"}, post_body) do |stream|
-              consume_io(stream.body_io, json_chunk_tokenizer) do |chunk|
-                begin
-                  response = Model::WatchResponse.from_json(chunk)
-                  raise IO::EOFError.new unless response.error.nil?
+      filters = @filters.try(&.map(&.to_grpc)).try(&.compact)
 
-                  # Ignore "created" message
-                  self.event_channel.send(response.result.events) unless response.created
-                rescue e
-                  # Ignore close events
-                  raise Etcd::WatchError.new e.message unless e.message.try &.includes?("<EOF>")
+      request = Etcdserverpb::WatchRequest.new(
+        create_request: Etcdserverpb::WatchCreateRequest.new(
+          key: key.to_slice,
+          range_end: range_end.try(&.to_slice),
+          filters: filters,
+          start_revision: start_revision,
+          progress_notify: progress_notify,            
+        )
+      )
+
+      @watching = true      
+
+      while watching?
+        begin
+          headers = HTTP::Headers{
+            ":method" => "POST",
+            ":path" => "/etcdserverpb.Watch/Watch",
+            "content-type" => "application/grpc",  
+          }
+          data = GRPC.encode_protobuf(request)
+          
+          # This will yield each time there's a data frame
+          if http2 = @config.http2
+            channel = http2.open_stream(headers, data: data)
+            
+            while payload = channel.receive?
+              payload = IO::Memory.new(payload)
+              if payload.size > 0
+                response = GRPC.decode_protobuf(payload, Etcdserverpb::WatchResponse)
+                
+                # Very first data frame contains the watch ID
+                unless @watch_id
+                  @watch_id = response.watch_id
+                end
+
+                if events = response.events.try(&.map{|grpc_event| Model::WatchEvent.from_grpc(grpc_event)})                
+                  self.event_channel.send(events) unless self.event_channel.closed?
                 end
               end
             end
-          rescue e
-            # Ignore timeouts
-            unless e.is_a?(IO::Error) && e.message.try(&.includes? "Closed stream")
-              Log.error(exception: e) { "while watching" }
-            end
-
-            # Generate a new api connection if still watching
-            if watching?
-              Log.warn { "#{e} generating new etcd client" }
-              api.connection.close
-              @api = create_api.call
-            end
-
-            raise e
-          end
+          else
+            raise "No http2 object (this should never happen)"
+          end          
+          
+        rescue e
+          Log.warn {"Watcher error #{e.inspect_with_backtrace} sleeping and reconnecting"}
+          sleep Time::Span.new(seconds: RECONNECT_SECONDS)
         end
       end
     end
 
     # Close the client and stop the watcher
     def stop
-      # TODO: When adding pooling, return connection to the conn pool
       @watching = false
-      self.event_channel.close
-      api.connection.close
-    end
-
-    # Partitions IO into JSON chunks (only objects!)
-    protected def json_chunk_tokenizer
-      {% if compare_versions(Crystal::VERSION, "1.1.1") > 0 %}
-        Tokenizer.new("\n")
-      {% else %}
-        Tokenizer.new do |io|
-          length, unpaired = 0, 0
-          loop do
-            case io.read_char
-            when '{' then unpaired += 1
-            when '}' then unpaired -= 1
-            when Nil then break
-            end
-
-            length += 1
-            break if unpaired.zero?
-          end
-          unpaired.zero? && length > 0 ? length : -1
-        end
-      {% end %}
-    end
-
-    # Pulls tokens off stream IO, and calls block with tokenized IO
-    # io          Streaming IO                                      IO
-    # tokenizer   Tokenizer class with which the stream is parsed   Tokenizer
-    # block       Block that takes a string                         Block
-    protected def consume_io(io, tokenizer, &block : String -> Void)
-      raw_data = Bytes.new(4096)
-      until io.closed?
-        bytes_read = io.read(raw_data)
-        break if bytes_read.zero? # IO was closed
-
-        tokenizer.extract(raw_data[0, bytes_read]).each do |message|
-          yield String.new(message)
-        end
-      end
+      self.event_channel.close      
     end
   end
 end

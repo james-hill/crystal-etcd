@@ -45,10 +45,15 @@ class Etcd::Client
   end
 
   # special setter since we need to make a gRPC request and update the token
-  def authenticate(username : String, password : String)
+  # Note: called without parameters will clear the current username/password
+  def authenticate(username : String? = nil, password : String? = nil)
     @username = username
     @password = password
-    api.auth_token = auth.authenticate(username, password)
+    api.auth_token = if (un = username) && (pw = password)
+      auth.authenticate(un, pw)
+    else
+      nil
+    end
   end
 
   def maybe_authenticate

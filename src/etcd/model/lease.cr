@@ -1,40 +1,45 @@
-require "./base"
-
 module Etcd::Model
-  struct Leases < WithHeader
-    getter leases : Array(Lease)
-  end
+  struct Lease
+    getter! id : Int64
 
-  struct Lease < Base
-    @[JSON::Field(key: "ID", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter id : Int64
-  end
-
-  struct TimeToLive < WithHeader
-    @[JSON::Field(key: "ID", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter id : Int64
-    @[JSON::Field(key: "TTL", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter ttl : Int64
-    @[JSON::Field(key: "grantedTTL", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter granted_ttl : Int64
-    getter keys : Array(String)? # This should be Array(Bytes)?
-  end
-
-  # Returns error
-  struct Grant < WithHeader
-    @[JSON::Field(key: "ID", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter id : Int64
-    @[JSON::Field(key: "TTL", converter: Etcd::Model::StringTypeConverter(Int64))]
-    getter ttl : Int64
-  end
-
-  # Returns error
-  struct KeepAlive < Response
-    getter result : Result?
-
-    struct Result < Base
-      @[JSON::Field(key: "TTL", converter: Etcd::Model::StringTypeConverter(Int64))]
-      getter ttl : Int64?
+    def self.from_grpc(lease : Etcdserverpb::LeaseStatus)
+      self.new(lease.id)      
     end
+
+    def initialize(@id : Int64)
+    end
+  end
+
+  struct TimeToLive
+    getter! id : Int64
+    getter! ttl : Int64
+    getter! granted_ttl : Int64
+    getter! keys : Array(String)? # This should be Array(Bytes)?
+
+    def self.from_grpc(lease : Etcdserverpb::LeaseTimeToLiveResponse)
+      keys = [] of String
+      if raw_keys = lease.keys
+        keys = raw_keys.map do |key|
+          String.new(key)
+        end
+      end
+      self.new(lease.id, lease.ttl, lease.granted_ttl, keys)
+    end
+
+    def initialize(@id : Int64?, @ttl : Int64?, @granted_ttl : Int64?, @keys : Array(String)?)
+    end  
+  end
+
+  # Returns error
+  struct Grant
+    getter! id : Int64
+    getter! ttl : Int64
+
+    def initialize(@id : Int64?, @ttl : Int64?)
+    end
+
+    def self.from_grpc(lease : Etcdserverpb::LeaseGrantResponse)
+      self.new(lease.id, lease.ttl)
+    end  
   end
 end

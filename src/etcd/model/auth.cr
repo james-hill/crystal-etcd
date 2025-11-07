@@ -1,11 +1,7 @@
 require "./base"
 
 module Etcd::Model
-  struct Token < WithHeader
-    getter token : String
-  end
-
-  struct Permissions < WithHeader
+  struct Permissions 
     getter perm = [] of Permission
   end
 
@@ -14,13 +10,13 @@ module Etcd::Model
     WRITE
     READWRITE
 
-    def self.from_etcd_perm_type(type : Authpb::Permission::Type)
+    def self.from_grpc(type : Authpb::Permission::Type?)
       case type
-      when Authpb::Permission::READ
+      when Authpb::Permission::Type::READ, nil
         PermissionType::READ
-      when Authpb::Permission::WRITE
+      when Authpb::Permission::Type::WRITE
         PermissionType::WRITE
-      when Authpb::Permission::READWRITE
+      when Authpb::Permission::Type::READWRITE
         PermissionType::READWRITE
       else
         raise "Unknown permission type: #{type}"
@@ -43,7 +39,6 @@ module Etcd::Model
 
   struct Permission
     getter key : String # Bytes
-    @[JSON::Field(key: "permType")]
     getter perm_type : PermissionType = PermissionType::READ
     getter range_end : String? = nil # Bytes
 

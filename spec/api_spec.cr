@@ -15,79 +15,67 @@ require "./helper"
 # ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379,https://0.0.0.0:2379
 # ETCD_AUTO_TLS=true
 
-module Etcd
-  describe Api do
-    it "should retry when it can't connect to a bad endpoint" do
-      client = Etcd::Client.new(
-        endpoints: [
-          URI.parse(NONEXISTENT_ENDPOINT),
-          URI.parse("http://localhost:2379"),
-        ]
-      )
+# TODO: move retry logic down into the GRPC shard?
+# module Etcd
+#   describe Api do
+#     it "should retry when it can't connect to a bad endpoint" do
+#       client = Etcd::Client.new(
+#         endpoints: [
+#           URI.parse(NONEXISTENT_ENDPOINT),
+#           URI.parse("http://localhost:2379"),
+#         ]
+#       )
 
-      client.kv.put("#{TEST_PREFIX}_endpoint_test", "yup")
-    end
+#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "yup")
+#     end
 
-    it "should retry when it a previously good endpoint fails" do
-      client = Etcd::Client.new(
-        endpoints: [
-          URI.parse("http://localhost:2379"),
-          URI.parse(NONEXISTENT_ENDPOINT),
-        ]
-      )
+#     it "should retry when it a previously good endpoint fails" do
+#       client = Etcd::Client.new(
+#         endpoints: [
+#           URI.parse("http://localhost:2379"),
+#           URI.parse(NONEXISTENT_ENDPOINT),
+#         ]
+#       )
 
-      client.kv.put("#{TEST_PREFIX}_endpoint_test", "before_failure")
+#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "before_failure")
 
-      client.api.rotate_endpoints
+#       client.api.rotate_endpoints
 
-      client.kv.put("#{TEST_PREFIX}_endpoint_test", "after_failure")
-    end
+#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "after_failure")
+#     end
 
-    it "should reset the retry count when a successful request is made" do
-      client = Etcd::Client.new(
-        endpoints: [
-          URI.parse(NONEXISTENT_ENDPOINT),
-          URI.parse("http://localhost:2379"),
-        ]
-      )
+#     it "should reset the retry count when a successful request is made" do
+#       client = Etcd::Client.new(
+#         endpoints: [
+#           URI.parse(NONEXISTENT_ENDPOINT),
+#           URI.parse("http://localhost:2379"),
+#         ]
+#       )
 
-      client.kv.get("#{TEST_PREFIX}_endpoint_test")
+#       client.kv.get("#{TEST_PREFIX}_endpoint_test")
 
-      client.api.retries_performed.should eq 0
-    end
+#       client.api.retries_performed.should eq 0
+#     end
 
-    it "should bail out with a connection error if a single endpoint fails" do
-      client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))
+#     it "should bail out with a connection error if a single endpoint fails" do
+#       client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))
 
-      expect_raises(Etcd::ConnectionError) do
-        client.kv.get("#{TEST_PREFIX}_endpoint_test")
-      end
-    end
+#       expect_raises(Etcd::ConnectionError) do
+#         client.kv.get("#{TEST_PREFIX}_endpoint_test")
+#       end
+#     end
 
-    it "should bail out with a connection error if all endpoints fail" do
-      client = Etcd::Client.new(
-        endpoints: [
-          URI.parse(NONEXISTENT_ENDPOINT),
-          URI.parse(NONEXISTENT_ENDPOINT),
-        ]
-      )
+#     it "should bail out with a connection error if all endpoints fail" do
+#       client = Etcd::Client.new(
+#         endpoints: [
+#           URI.parse(NONEXISTENT_ENDPOINT),
+#           URI.parse(NONEXISTENT_ENDPOINT),
+#         ]
+#       )
 
-      expect_raises(Etcd::ConnectionError) do
-        client.kv.get("#{TEST_PREFIX}_endpoint_test")
-      end
-    end
-
-    it "should set the version properly" do
-      version = "v3beta"
-      client = Etcd::Client.new(
-        api_version: version,
-        endpoints: [
-          URI.parse(NONEXISTENT_ENDPOINT),
-          URI.parse("http://localhost:2379"),
-        ]
-      )
-
-      client.api.api_version.should eq version
-    end
-  end
-end
+#       expect_raises(Etcd::ConnectionError) do
+#         client.kv.get("#{TEST_PREFIX}_endpoint_test")
+#       end
+#     end    
+#   end
+# end

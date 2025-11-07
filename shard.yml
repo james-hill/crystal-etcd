@@ -10,13 +10,9 @@ authors:
   - James Hill <james@populi.co>
 
 dependencies:
-  simple_retry:
-    github: spider-gazelle/simple_retry
-  tokenizer:
-    github: spider-gazelle/tokenizer
   grpc:
     github: atlantis/grpc
-    commit: 2d405028588dee02c6823f856dd995923ac2fbdb
+    commit: 9cffa050c8afec13a654623274945ed87f822a74
   http2:
     github: ysbaddaden/http2
     commit: 969b60761458dd3cdd4d87c3823e8f50d0afc261

@@ -57,11 +57,11 @@ module Etcd::Model
           prev_kv: Etcd::Model::Kv.from_grpc(prev_kv)
         )
       else
-        nil
+        self.new
       end
     end  
 
-    def initialize(@prev_kv : Kv?)
+    def initialize(@prev_kv : Kv? = nil)
     end
   end
 
@@ -84,10 +84,48 @@ module Etcd::Model
     getter response_range : Range?
     getter response_put : Put?
     getter response_delete : Delete?
+
+    def self.from_grpc(txn_response : Etcdserverpb::ResponseOp)
+      response_range : Range? = nil 
+      if rr = txn_response.response_range 
+        response_range = Range.from_grpc(rr) 
+      end
+        
+      response_put : Put? = nil
+      if rp = txn_response.response_put 
+        response_put = Put.from_grpc(rp) 
+      end
+
+      response_delete : Delete? = nil
+      if rd = txn_response.response_delete_range 
+        response_delete = Delete.from_grpc(rd) 
+      end
+
+      self.new(
+        response_range: response_range,
+        response_put: response_put,
+        response_delete: response_delete,
+      )
+    end
+
+    def initialize(@response_range : Range?, @response_put : Put?, @response_delete : Delete?)
+    end
   end
 
   struct Txn
     getter succeeded : Bool = false
-    getter responses : Array(TxnResponse) = [] of TxnResponse
+    getter responses = [] of TxnResponse
+
+    def self.from_grpc(txn_response : Etcdserverpb::TxnResponse)
+      self.new(
+        succeeded: txn_response.succeeded || false,
+        responses: (txn_response.responses || [] of Etcdserverpb::ResponseOp).map { |response| 
+          TxnResponse.from_grpc(response)
+        }
+      )
+    end
+
+    def initialize(@succeeded : Bool, @responses : Array(TxnResponse))
+    end
   end
 end

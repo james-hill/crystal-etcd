@@ -90,13 +90,13 @@ module Etcd
       range(key, range_end: range_end)
     end
 
-    def txn(post_body)
-      response = client.api.post("/kv/txn", post_body)
-      Model::Txn.from_json(response.body).succeeded
+    def txn(compare : Array(Etcdserverpb::Compare), success : Array(Etcdserverpb::RequestOp), failure = [] of Etcdserverpb::RequestOp)
+      response = stub.txn(Etcdserverpb::TxnRequest.new(compare, success, failure))
+      Model::Txn.from_grpc(response).succeeded
     end
 
     def compaction(physical : Bool, revision : Int64)
-      client.api.post("/kv/compaction", {:physical => physical, :revision => revision}).success?
+      stub.compaction(Etcdserverpb::CompactionRequest.new(physical:  physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
     end
 
     # Non-Standard Requests
@@ -106,98 +106,99 @@ module Etcd
     #
     # Wrapper over the etcd transaction API.
     def put_not_exists(key : String, value, lease : Int64 = 0_i64) : Bool
-      key = Base64.strict_encode(key)
-      value = Base64.strict_encode(value.to_s)
-      post_body = {
-        :compare => [{
-          :key    => key,
-          :value  => Base64.strict_encode("0"),
-          :target => "VERSION",
-          :result => "EQUAL",
-        }],
-        :success => [{
-          :request_put => {
-            :key          => key,
-            :value        => value,
-            :lease        => lease,
-            :ignore_lease => false,
-          },
-        }],
-      }
+      compare = [
+        Etcdserverpb::Compare.new(
+          key: key.to_slice,
+          value: "0".to_slice,
+          target: Etcdserverpb::Compare::CompareTarget::VERSION,
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,       
+        )
+      ]
 
-      response = client.api.post("/kv/txn", post_body)
-      Model::Txn.from_json(response.body).succeeded
+      success = [
+        Etcdserverpb::RequestOp.new(
+          request_put: Etcdserverpb::PutRequest.new(
+            key: key.to_slice,
+            value: value.to_slice,
+            lease: lease,
+            ignore_lease: false,
+          )
+        )         
+      ]
+
+      txn(compare, success)
     end
 
     # Moves a value from `key` to `key_destination`, deleting the kv at `key` in the process.
-    def move(key : String, key_destination : String, value, lease : Int64 = 0_i64) : Bool
-      key_o = Base64.strict_encode(key)
-      key_d = Base64.strict_encode(key_destination)
-      value = Base64.strict_encode(value.to_s)
+    def move(key : String, key_destination : String, lease : Int64 = 0_i64) : Bool
+      key_o = key.to_slice
+      key_d = key_destination.to_slice
+      if value = get(key)
+        compare = [
+          Etcdserverpb::Compare.new(
+            key: key_d,
+            value: "0".to_slice,
+            target: Etcdserverpb::Compare::CompareTarget::VERSION,
+            result: Etcdserverpb::Compare::CompareResult::EQUAL,       
+          ),
+          Etcdserverpb::Compare.new(
+            key: key_o,
+            value: "0".to_slice,
+            target: Etcdserverpb::Compare::CompareTarget::VERSION,
+            result: Etcdserverpb::Compare::CompareResult::NOT_EQUAL,       
+          ),      
+        ]
 
-      post_body = {
-        :compare => [
-          {
-            :key    => key_d,
-            :value  => Base64.strict_encode("0"),
-            :target => "VERSION",
-            :result => "EQUAL",
-          },
-          {
-            :key    => key_o,
-            :value  => Base64.strict_encode("0"),
-            :target => "VERSION",
-            :result => "NOT_EQUAL",
-          },
-        ],
-        :success => [
-          {
-            :request_put => {
-              :key          => key_d,
-              :value        => value,
-              :lease        => lease,
-              :ignore_lease => false,
-            },
-          },
-          {
-            :request_delete_range => {
-              :key          => key_o,
-              :value        => value,
-              :lease        => lease,
-              :ignore_lease => false,
-            },
-          },
-        ],
-      }
+        success = [
+          Etcdserverpb::RequestOp.new(
+            request_put: Etcdserverpb::PutRequest.new(
+              key: key_d,
+              value: value.to_slice,
+              lease: lease,
+              ignore_lease: false,
+            )
+          ),
+          Etcdserverpb::RequestOp.new(
+            request_delete_range: Etcdserverpb::DeleteRangeRequest.new(
+              key: key_o,
+            )
+          ),
+        ]
 
-      response = client.api.post("/kv/txn", post_body)
-      Model::TxnResponse.from_json(response.body).succeeded
+        txn(compare, success)
+      else
+        false
+      end
     end
 
     # Sets a `key` if the given `previous_value` matches the existing value for `key`
     #
     # Wrapper over the etcd transaction API.
     def compare_and_swap(key, value, previous_value, lease_id : Int64 = 0_i64) : Bool
-      encoded_key = Base64.strict_encode(key)
-      encoded_value = Base64.strict_encode(value.to_s)
-      encoded_previous_value = Base64.strict_encode(previous_value.to_s)
-      post_body = {
-        :compare => [{
-          :key    => encoded_key,
-          :value  => encoded_previous_value,
-          :target => "VALUE",
-          :result => "EQUAL",
-        }],
-        :success => [{
-          :request_put => {
-            :key   => encoded_key,
-            :value => encoded_value,
-            :lease => lease_id,
-          },
-        }],
-      }
+      encoded_key = key.to_slice
+      encoded_value = value.to_slice
+      encoded_previous_value = previous_value.to_slice
+      
+      compare = [
+        Etcdserverpb::Compare.new(
+          key: encoded_key,
+          value: encoded_previous_value,
+          target: Etcdserverpb::Compare::CompareTarget::VALUE,
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,       
+        )
+      ]
 
-      Model::Txn.from_json(client.api.post("/kv/txn", post_body).body).succeeded
+      success = [
+        Etcdserverpb::RequestOp.new(
+          request_put: Etcdserverpb::PutRequest.new(
+            key: encoded_key,
+            value: encoded_value,
+            lease: lease_id,
+          )
+        )         
+      ]
+
+      txn(compare, success)
     end
 
     def get(key) : String?

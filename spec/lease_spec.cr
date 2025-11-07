@@ -52,10 +52,6 @@ module Etcd
     end
 
     it "handles nil on keep_alive" do
-      # Deserialise and handle incorrect json
-      Etcd::Model::KeepAlive.from_json(%({"result": {"TTL": "15"}})).result.try(&.ttl).should eq(15)
-      Etcd::Model::KeepAlive.from_json(%({"result": {"error": "error"}}))
-
       client = Etcd.from_env
       new_ttl = client.lease.keep_alive 5_i64
       new_ttl.should be_nil

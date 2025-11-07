@@ -32,40 +32,43 @@ class Etcd::Auth
   def role_add(name : String)
     validate!(name)
 
-    stub.role_add(Etcdserverpb::AuthRoleAddRequest.new(name: name)).success?
+    stub.role_add(Etcdserverpb::AuthRoleAddRequest.new(name: name)).is_a?(Etcdserverpb::AuthRoleAddResponse)
   end
 
   # auth/role/delete
   def role_delete(role : String)
-    stub.role_delete(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).success?
+    stub.role_delete(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).is_a?(Etcdserverpb::AuthRoleDeleteResponse)
   end
 
   # auth/role/get
   def role_get(role : String)
-    stub.role_get(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).perm.map do |perm|
-      Model::Permission.new(
-        perm.key,
-        Model::PermissionType.from_etcd_perm_type(perm.perm_type),
-        perm.range_end
-      )
+    perms = stub.role_get(Etcdserverpb::AuthRoleGetRequest.new(role: role)).perm || [] of Authpb::Permission
+    perms.map do |perm|
+      if key = perm.key
+        Model::Permission.new(
+          key.to_s,
+          Model::PermissionType.from_grpc(perm.perm_type),
+          perm.range_end.try(&.to_s)
+        )
+      end
     end
   end
 
   # auth/role/grant
   # Note: base64_keys is deprected now that we use gRPC
-  def role_grant(role : String, perm_key : String, range_end : String? = nil, perm_type = Model::PermissionType::READ, base64_keys : Bool = true)
+  def role_grant(role : String, perm_key : String, range_end : String | Slice(UInt8)? = nil, perm_type = Model::PermissionType::READ, base64_keys : Bool = true)
     validate!(role)
 
     request = Etcdserverpb::AuthRoleGrantPermissionRequest.new(
       name: role,
       perm:  Authpb::Permission.new(
-        key:       perm_key,
+        key:       perm_key.to_slice,
         perm_type: perm_type.to_etcd_perm_type,
         range_end: range_end,
       ),
     )
 
-    stub.role_grant(request).is_a?(Etcdserverpb::AuthRoleGrantPermissionResponse)
+    stub.role_grant_permission(request).is_a?(Etcdserverpb::AuthRoleGrantPermissionResponse)
   end
 
   def role_grant_prefix(name : String, prefix : String, perm_type = Model::PermissionType::READ)
@@ -75,21 +78,21 @@ class Etcd::Auth
 
   # auth/role/list
   def role_list
-    stub.role_list(Etcdserverpb::AuthRoleListRequest.new).roles
+    stub.role_list(Etcdserverpb::AuthRoleListRequest.new).roles || [] of String
   end
 
   # auth/role/revoke
   # Note: base64_keys is deprected now that we use gRPC
-  def role_revoke(role : String, key : String, range_end : String? = nil, base64_keys : Bool = true)
+  def role_revoke(role : String, key : String, range_end : String | Slice(UInt8)? = nil, base64_keys : Bool = true)
     validate!(role)
 
     request = Etcdserverpb::AuthRoleRevokePermissionRequest.new(
-      name: role,
-      key: perm_key,
+      role: role,
+      key: key.to_slice,
       range_end: range_end,
     )
 
-    stub.role_revoke(request).is_a?(AuthRoleRevokePermissionResponse)
+    stub.role_revoke_permission(request).is_a?(Etcdserverpb::AuthRoleRevokePermissionResponse)
   end
 
   def role_revoke_prefix(role : String, prefix : String)
@@ -104,7 +107,7 @@ class Etcd::Auth
     request = Etcdserverpb::AuthUserAddRequest.new(
       name: name,
       password: password,
-      options: UserAddOptions.new(no_password: no_password),
+      options: Authpb::UserAddOptions.new(no_password: no_password),
     )
 
     stub.user_add(request).is_a?(Etcdserverpb::AuthUserAddResponse)
@@ -138,18 +141,18 @@ class Etcd::Auth
 
   # auth/user/grant
   def user_grant(role : String, user : String)
-    stub.user_grant(Etcdserverpb::AuthUserGrantRequest.new(user: user, role: role)).is_a?(Etcdserverpb::AuthUserGrantResponse)
+    stub.user_grant_role(Etcdserverpb::AuthUserGrantRoleRequest.new(user: user, role: role)).is_a?(Etcdserverpb::AuthUserGrantRoleResponse)
   end
 
   # auth/user/list
   def user_list
-    stub.user_list(Etcdserverpb::AuthUserListRequest.new).users
+    stub.user_list(Etcdserverpb::AuthUserListRequest.new).users || [] of String
   end
 
   # auth/user/revoke
   def user_revoke(name : String, role : String)
     validate!(name)
-    stub.user_revoke(Etcdserverpb::AuthUserRevokeRequest.new(user: name, role: role)).is_a?(Etcdserverpb::AuthUserRevokeResponse)
+    stub.user_revoke_role(Etcdserverpb::AuthUserRevokeRoleRequest.new(user: name, role: role)).is_a?(Etcdserverpb::AuthUserRevokeRoleResponse)
   end
 
   private def validate!(name : String)
