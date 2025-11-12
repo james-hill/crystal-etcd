@@ -136,7 +136,7 @@ class Etcd::Auth
   def user_get(name : String)
     validate!(name)
 
-    stub.user_get(Etcdserverpb::AuthUsergetRequest.new(name: name)).roles
+    stub.user_get(Etcdserverpb::AuthUserGetRequest.new(name: name)).roles
   end
 
   # auth/user/grant
