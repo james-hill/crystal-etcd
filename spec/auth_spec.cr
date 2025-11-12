@@ -41,6 +41,20 @@ module Etcd
       end
     end
 
+    describe "users" do
+      it "can be listed", tags: "localonly" do
+        client = Etcd.from_env
+        client.auth.user_list.should be_a Array(String)        
+      end
+
+      it "can have their roles listed", tags: "localonly" do
+        client = Etcd.from_env
+        client.auth.user_add(TEST_USER, TEST_PASSWORD) 
+        client.auth.user_grant(ROOT_ROLE, TEST_USER)       
+        client.auth.user_get(TEST_USER).should be_a Array(String)
+      end
+    end
+
     describe "roles" do
       it "can be listed", tags: "localonly" do
         client = Etcd.from_env

@@ -122,7 +122,7 @@ class Etcd::Auth
       password: password,
     )
 
-    stub.user_changepw(request).is_a?(Etcdserverpb::AuthUserChangePasswordResponse)
+    stub.user_change_password(request).is_a?(Etcdserverpb::AuthUserChangePasswordResponse)
   end
 
   # auth/user/delete
