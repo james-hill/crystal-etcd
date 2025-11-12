@@ -56,7 +56,7 @@ class Etcd::Auth
 
   # auth/role/grant
   # Note: base64_keys is deprected now that we use gRPC
-  def role_grant(role : String, perm_key : String, range_end : String | Slice(UInt8)? = nil, perm_type = Model::PermissionType::READ, base64_keys : Bool = true)
+  def role_grant(role : String, perm_key : String, range_end : String | Slice(UInt8)? = nil, perm_type : Model::PermissionType = Model::PermissionType::READ, base64_keys : Bool = true)
     validate!(role)
 
     request = Etcdserverpb::AuthRoleGrantPermissionRequest.new(
