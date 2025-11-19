@@ -35,8 +35,7 @@ module Etcd::Model
           type: WatchEvent::Type.from_grpc(grpc_event.type),
           kv: Kv.from_grpc(kv)
         )
-      else
-        raise "Event without kv: #{grpc_event.inspect}"
+        # else do nothing - sometimes empty watch responses are used for progress notification
       end      
     end
 
