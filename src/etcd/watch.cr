@@ -190,8 +190,9 @@ class Etcd::Watch
                   @watch_id = response.watch_id
                 end
 
-                if events = response.events.try(&.map{|grpc_event| Model::WatchEvent.from_grpc(grpc_event)})                
-                  self.event_channel.send(events) unless self.event_channel.closed?
+                events = response.events.try(&.map{|grpc_event| Model::WatchEvent.from_grpc(grpc_event)}).compact                
+                unless events.empty? || self.event_channel.closed?
+                  self.event_channel.send(events) 
                 end
               end
             end
