@@ -67,16 +67,18 @@ class Etcd::Client
   {% for component in %w(kv lease maintenance watch auth cluster) %}
     # Provide an object for managing {{component.id}}. See `Docker::{{component.id.capitalize}}`.
     def {{component.id}} : {{component.id.capitalize}}
-      @{{component.id}} ||= {{component.id.capitalize}}.new(api.config)
+      @{{component.id}} ||= {{component.id.capitalize}}.new(api)
     end
   {% end %}
 
   private def after_initialize
     @api = Etcd::Api.new(
+      client: self,
       endpoints: @endpoints,
       tls_context: @tls_context
     )
-    @auth = Etcd::Auth.new(api.config)
+    @auth = Etcd::Auth.new(api)
+
     maybe_authenticate
   end
 end

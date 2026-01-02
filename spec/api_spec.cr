@@ -15,67 +15,84 @@ require "./helper"
 # ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379,https://0.0.0.0:2379
 # ETCD_AUTO_TLS=true
 
-# TODO: move retry logic down into the GRPC shard?
-# module Etcd
-#   describe Api do
-#     it "should retry when it can't connect to a bad endpoint" do
-#       client = Etcd::Client.new(
-#         endpoints: [
-#           URI.parse(NONEXISTENT_ENDPOINT),
-#           URI.parse("http://localhost:2379"),
-#         ]
-#       )
+module Etcd
+  describe Api do
+    it "should retry when it can't connect to a bad endpoint" do
+      client = Etcd::Client.new(
+        endpoints: [
+          URI.parse(NONEXISTENT_ENDPOINT),
+          URI.parse("http://localhost:2379"),
+        ]
+      )
 
-#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "yup")
-#     end
+      client.kv.put("#{TEST_PREFIX}_endpoint_test", "yup")
+    end
 
-#     it "should retry when it a previously good endpoint fails" do
-#       client = Etcd::Client.new(
-#         endpoints: [
-#           URI.parse("http://localhost:2379"),
-#           URI.parse(NONEXISTENT_ENDPOINT),
-#         ]
-#       )
+    it "should retry when it a previously good endpoint fails" do
+      client = Etcd::Client.new(
+        endpoints: [
+          URI.parse("http://localhost:2379"),
+          URI.parse(NONEXISTENT_ENDPOINT),
+        ]
+      )
 
-#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "before_failure")
+      client.kv.put("#{TEST_PREFIX}_endpoint_test", "before_failure")
 
-#       client.api.rotate_endpoints
+      client.api.reconnect  # this will hit the bad endpoint
 
-#       client.kv.put("#{TEST_PREFIX}_endpoint_test", "after_failure")
-#     end
+      client.kv.put("#{TEST_PREFIX}_endpoint_test", "after_failure")
+    end
 
-#     it "should reset the retry count when a successful request is made" do
-#       client = Etcd::Client.new(
-#         endpoints: [
-#           URI.parse(NONEXISTENT_ENDPOINT),
-#           URI.parse("http://localhost:2379"),
-#         ]
-#       )
+    it "should reset the retry count when a successful request is made" do
+      client = Etcd::Client.new(
+        endpoints: [
+          URI.parse(NONEXISTENT_ENDPOINT),
+          URI.parse("http://localhost:2379"),
+        ]
+      )
 
-#       client.kv.get("#{TEST_PREFIX}_endpoint_test")
+      client.kv.get("#{TEST_PREFIX}_endpoint_test")
 
-#       client.api.retries_performed.should eq 0
-#     end
+      client.api.retries_performed.should eq 0
+    end
 
-#     it "should bail out with a connection error if a single endpoint fails" do
-#       client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))
+    it "should bail out with a connection error if a single endpoint fails" do
+      expect_raises(Etcd::ConnectionError) do
+        client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))        
+      end
+    end
 
-#       expect_raises(Etcd::ConnectionError) do
-#         client.kv.get("#{TEST_PREFIX}_endpoint_test")
-#       end
-#     end
+    it "should bail out with a connection error if all endpoints fail" do
+      expect_raises(Etcd::ConnectionError) do
+        client = Etcd::Client.new(
+            endpoints: [
+            URI.parse(NONEXISTENT_ENDPOINT),
+            URI.parse(NONEXISTENT_ENDPOINT),
+            ]
+        )
+      end
+    end    
 
-#     it "should bail out with a connection error if all endpoints fail" do
-#       client = Etcd::Client.new(
-#         endpoints: [
-#           URI.parse(NONEXISTENT_ENDPOINT),
-#           URI.parse(NONEXISTENT_ENDPOINT),
-#         ]
-#       )
+    it "reconnects on error" do
+      key0, value0 = "#{TEST_PREFIX}/foo", "bar"
+      
+      client = Etcd.from_env
+      client.api.max_retries = 1
+      client.kv.put(key0, value0)
+      client.kv.api.config.http2.try(&.close)
+      client.kv.put(key0, value0)
+    end
 
-#       expect_raises(Etcd::ConnectionError) do
-#         client.kv.get("#{TEST_PREFIX}_endpoint_test")
-#       end
-#     end    
-#   end
-# end
+    it "respects no reconnects on error" do
+      key0, value0 = "#{TEST_PREFIX}/foo", "bar"
+      
+      client = Etcd.from_env
+      client.api.max_retries = 0
+      client.kv.put(key0, value0)
+      client.kv.api.config.http2.try(&.close)
+      expect_raises(Etcd::ConnectionError) do
+        client.kv.put(key0, value0)
+      end
+    end
+  end
+end

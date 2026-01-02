@@ -36,7 +36,7 @@ module Etcd
 
         # this should fail unless we refresh the token
         client.kv.get("#{TEST_PREFIX}/hello").should eq value
-
+        
         # make sure to disable again
         client.auth.disable
       end

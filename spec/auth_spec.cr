@@ -104,15 +104,15 @@ module Etcd
       end
     end
 
-    # You have to define these ENVs and use a valid cert for your local setup
+    # The ETCD server you're running tests against must have TLS enabled for this test to pass
     describe "TLS" do
       it "can be used", tags: "localonly" do
         tls_context = OpenSSL::SSL::Context::Client.from_hash(
           {
             "verify_mode" => "none",
-            "key" => ENV["ETCD_KEY_PATH"],
-            "cert" => ENV["ETCD_CERT_PATH"],
-            "ca" => ENV["ETCD_CA_PATH"],
+            "key" => "#{__DIR__}/certs/test_client_key.pem",
+            "cert" => "#{__DIR__}/certs/test_client_cert.pem",
+            "ca" => "#{__DIR__}/certs/test_ca_cert.pem",
           }
         )
 

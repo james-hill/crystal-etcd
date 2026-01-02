@@ -5,7 +5,7 @@ require "./utils"
 class Etcd::Watch
   include Utils
 
-  RECONNECT_SECONDS = 5
+  RECONNECT_SECONDS = 1
 
   # Types for watch event filters
   enum Filter
@@ -23,10 +23,9 @@ class Etcd::Watch
   end
 
   getter stub : Etcdserverpb::KV::Stub
-  @config : GRPC::Config
-
-  def initialize(@config : GRPC::Config)
-    @stub = Etcdserverpb::KV::Stub.new(@config)
+  
+  def initialize(@api : Etcd::Api)
+    @stub = Etcdserverpb::KV::Stub.new(@api.config)
   end
 
 
@@ -77,7 +76,7 @@ class Etcd::Watch
   ) : Watcher
     Watcher.new(
       key: key,
-      config: @config,
+      api: @api,
       range_end: range_end,
       filters: filters,
       start_revision: start_revision,
@@ -101,7 +100,7 @@ class Etcd::Watch
     Log = ::Log.for(self)
 
     getter key : String
-    private getter config : GRPC::Config
+    getter api : Etcd::Api
     private getter block : Proc(Array(Model::WatchEvent), Void)
     private getter range_end : String?
     private getter filters : Array(Watch::Filter)?
@@ -118,14 +117,14 @@ class Etcd::Watch
 
     def initialize(
       @key,
-      @config = GRPC::Config,
+      @api = Etcd::Api,
       range_end = nil,
       @filters = nil,
       @start_revision = nil,
       @progress_notify = nil,
       &@block : Array(Model::WatchEvent) -> Void
     )
-      @stub = Etcdserverpb::Watch::Stub.new(@config)
+      @stub = Etcdserverpb::Watch::Stub.new(@api.config)
 
       @range_end = case range_end
       when String
@@ -177,7 +176,8 @@ class Etcd::Watch
           data = GRPC.encode_protobuf(request)
           
           # This will yield each time there's a data frame
-          if http2 = @config.http2
+          @api.max_retries = 0
+          if (http2 = @api.config.http2) && !http2.connection.closed?
             channel = http2.open_stream(headers, data: data)
             
             while payload = channel.receive?
@@ -196,15 +196,26 @@ class Etcd::Watch
                     self.event_channel.send(events) 
                   end
                 end
+              else
+                Log.warn {"Empty payload received"}
               end
             end
+
+            Log.warn {"Watcher stream closed, sleeping and reconnecting"}            
           else
-            raise "No http2 object (this should never happen)"
+            raise "No connected http2 object... sleeping and reconnecting"            
           end          
           
-        rescue e
-          Log.warn {"Watcher error #{e.inspect_with_backtrace} sleeping and reconnecting"}
-          sleep Time::Span.new(seconds: RECONNECT_SECONDS)
+        rescue error
+          Log.warn(exception: error) {"Watcher error while sleeping and reconnecting"}          
+        end
+        
+        sleep Time::Span.new(seconds: RECONNECT_SECONDS)
+
+        begin 
+          @api.reconnect
+        rescue error
+          Log.warn(exception: error) {"Watcher error during reconnection"}
         end
       end
     end

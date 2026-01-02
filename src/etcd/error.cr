@@ -15,8 +15,8 @@ module Etcd
   end
 
   class ConnectionError < Error
-    def initialize(@url : URI? = nil, cause = nil)
-      super("Could not connect to etcd endpoint: #{@url.try(&.to_s) || "Unknown URL"}", cause: cause)
+    def initialize
+      super("Could not connect to any etcd endpoints")
     end
   end
 end

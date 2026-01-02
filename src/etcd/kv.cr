@@ -7,8 +7,10 @@ module Etcd
 
     getter stub : Etcdserverpb::KV::Stub
 
-    def initialize(@config : GRPC::Config)
-      @stub = Etcdserverpb::KV::Stub.new(@config)
+    getter api : Etcd::Api
+
+    def initialize(@api : Etcd::Api)
+      @stub = Etcdserverpb::KV::Stub.new(@api.config)
     end
 
     # Sets a key and value in etcd.
@@ -28,18 +30,20 @@ module Etcd
       ignore_value : Bool? = nil,
       ignore_lease : Bool? = nil,
     )
-      response = stub.put(
-        Etcdserverpb::PutRequest.new(
-          key: key.to_slice,
-          value: value.to_slice,
-          lease: lease,
-          prev_kv: prev_kv,
-          ignore_value: ignore_value,
-          ignore_lease: ignore_lease,
-        )
+      request = Etcdserverpb::PutRequest.new(
+        key: key.to_slice,
+        value: value.to_slice,
+        lease: lease,
+        prev_kv: prev_kv,
+        ignore_value: ignore_value,
+        ignore_lease: ignore_lease,
       )
+      
+      @api.with_retry do
+        response = stub.put(request)
 
-      Model::Put.from_grpc(response)
+        Model::Put.from_grpc(response)
+      end
     end
 
     # Deletes key or range of keys
@@ -51,13 +55,17 @@ module Etcd
         prev_kv: prev_kv,
       )
       
-      Model::Delete.from_grpc(stub.delete_range(request))
+      @api.with_retry do
+        Model::Delete.from_grpc(stub.delete_range(request))
+      end
     end
 
     # Deletes an entire keyspace prefix
     def delete_prefix(prefix, prev_kv = false)
       range_end = prefix_range_end prefix
-      delete(prefix, range_end, prev_kv: prev_kv)
+      @api.with_retry do
+        delete(prefix, range_end, prev_kv: prev_kv)
+      end
     end
 
     # Queries a range of keys
@@ -68,7 +76,9 @@ module Etcd
         range_end: range_end,
         limit: limit,
       )
-      Model::Range.from_grpc(stub.range(request))
+      @api.with_retry do
+        Model::Range.from_grpc(stub.range(request))
+      end
     end
 
     # Range that automatically yields each Etcd::Model::Kv
@@ -91,12 +101,16 @@ module Etcd
     end
 
     def txn(compare : Array(Etcdserverpb::Compare), success : Array(Etcdserverpb::RequestOp), failure = [] of Etcdserverpb::RequestOp)
-      response = stub.txn(Etcdserverpb::TxnRequest.new(compare, success, failure))
-      Model::Txn.from_grpc(response).succeeded
+      @api.with_retry do
+        response = stub.txn(Etcdserverpb::TxnRequest.new(compare, success, failure))
+        Model::Txn.from_grpc(response).succeeded
+      end
     end
 
     def compaction(physical : Bool, revision : Int64)
-      stub.compaction(Etcdserverpb::CompactionRequest.new(physical:  physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
+      @api.with_retry do
+        stub.compaction(Etcdserverpb::CompactionRequest.new(physical:  physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
+      end
     end
 
     # Non-Standard Requests

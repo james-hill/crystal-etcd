@@ -3,8 +3,8 @@ require "./model/maintenance"
 class Etcd::Maintenance
   getter stub : Etcdserverpb::Maintenance::Stub
 
-  def initialize(config : GRPC::Config)
-    @stub = Etcdserverpb::Maintenance::Stub.new(config)
+  def initialize(@api : Etcd::Api)
+    @stub = Etcdserverpb::Maintenance::Stub.new(@api.config)
   end
 
   def alarm(action : Model::AlarmAction, alarm : Model::AlarmType? = nil, member_id : UInt64? = nil)

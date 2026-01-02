@@ -6,50 +6,65 @@ class Etcd::Auth
 
   getter stub : Etcdserverpb::Auth::Stub
 
-  def initialize(config : GRPC::Config)
-    @stub = Etcdserverpb::Auth::Stub.new(config)
+  def initialize(@api : Etcd::Api)
+    @stub = Etcdserverpb::Auth::Stub.new(@api.config)
   end
 
   # auth/disable
   def disable
-    stub.auth_disable(Etcdserverpb::AuthDisableRequest.new).is_a?(Etcdserverpb::AuthDisableResponse)
+    @api.with_retry do
+      stub.auth_disable(Etcdserverpb::AuthDisableRequest.new).is_a?(Etcdserverpb::AuthDisableResponse)
+    end
   end
 
   # auth/enable
   def enable
-    stub.auth_enable(Etcdserverpb::AuthEnableRequest.new).is_a?(Etcdserverpb::AuthEnableResponse)
+    @api.with_retry do
+      stub.auth_enable(Etcdserverpb::AuthEnableRequest.new).is_a?(Etcdserverpb::AuthEnableResponse)
+    end
   end
 
   def enabled?
-    stub.auth_status(Etcdserverpb::AuthStatusRequest.new).enabled == true
+    @api.with_retry do
+      stub.auth_status(Etcdserverpb::AuthStatusRequest.new).enabled == true
+    end
   end
 
   def authenticate(username : String, password : String)
-    stub.authenticate(Etcdserverpb::AuthenticateRequest.new(name: username, password: password)).token
+    @api.with_retry do
+      stub.authenticate(Etcdserverpb::AuthenticateRequest.new(name: username, password: password)).token
+    end
   end
 
   # auth/role/add
   def role_add(name : String)
     validate!(name)
 
-    stub.role_add(Etcdserverpb::AuthRoleAddRequest.new(name: name)).is_a?(Etcdserverpb::AuthRoleAddResponse)
+    @api.with_retry do
+      stub.role_add(Etcdserverpb::AuthRoleAddRequest.new(name: name)).is_a?(Etcdserverpb::AuthRoleAddResponse)
+    end
   end
 
   # auth/role/delete
   def role_delete(role : String)
-    stub.role_delete(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).is_a?(Etcdserverpb::AuthRoleDeleteResponse)
+    @api.with_retry do
+      stub.role_delete(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).is_a?(Etcdserverpb::AuthRoleDeleteResponse)
+    end
   end
 
   # auth/role/get
   def role_get(role : String)
-    perms = stub.role_get(Etcdserverpb::AuthRoleGetRequest.new(role: role)).perm || [] of Authpb::Permission
-    perms.map do |perm|
-      if key = perm.key
-        Model::Permission.new(
-          key.to_s,
-          Model::PermissionType.from_grpc(perm.perm_type),
-          perm.range_end.try(&.to_s)
-        )
+    @api.with_retry do
+      perms = stub.role_get(Etcdserverpb::AuthRoleGetRequest.new(role: role)).perm || [] of Authpb::Permission
+    
+      perms.map do |perm|
+        if key = perm.key
+          Model::Permission.new(
+            key.to_s,
+            Model::PermissionType.from_grpc(perm.perm_type),
+            perm.range_end.try(&.to_s)
+          )
+        end
       end
     end
   end
@@ -68,7 +83,9 @@ class Etcd::Auth
       ),
     )
 
-    stub.role_grant_permission(request).is_a?(Etcdserverpb::AuthRoleGrantPermissionResponse)
+    @api.with_retry do
+      stub.role_grant_permission(request).is_a?(Etcdserverpb::AuthRoleGrantPermissionResponse)
+    end
   end
 
   def role_grant_prefix(name : String, prefix : String, perm_type = Model::PermissionType::READ)
@@ -78,7 +95,9 @@ class Etcd::Auth
 
   # auth/role/list
   def role_list
-    stub.role_list(Etcdserverpb::AuthRoleListRequest.new).roles || [] of String
+    @api.with_retry do
+      stub.role_list(Etcdserverpb::AuthRoleListRequest.new).roles || [] of String
+    end
   end
 
   # auth/role/revoke
@@ -92,7 +111,9 @@ class Etcd::Auth
       range_end: range_end,
     )
 
-    stub.role_revoke_permission(request).is_a?(Etcdserverpb::AuthRoleRevokePermissionResponse)
+    @api.with_retry do
+      stub.role_revoke_permission(request).is_a?(Etcdserverpb::AuthRoleRevokePermissionResponse)
+    end
   end
 
   def role_revoke_prefix(role : String, prefix : String)
@@ -110,7 +131,9 @@ class Etcd::Auth
       options: Authpb::UserAddOptions.new(no_password: no_password),
     )
 
-    stub.user_add(request).is_a?(Etcdserverpb::AuthUserAddResponse)
+    @api.with_retry do
+      stub.user_add(request).is_a?(Etcdserverpb::AuthUserAddResponse)
+    end
   end
 
   # auth/user/changepw
@@ -122,37 +145,49 @@ class Etcd::Auth
       password: password,
     )
 
-    stub.user_change_password(request).is_a?(Etcdserverpb::AuthUserChangePasswordResponse)
+    @api.with_retry do
+      stub.user_change_password(request).is_a?(Etcdserverpb::AuthUserChangePasswordResponse)
+    end
   end
 
   # auth/user/delete
   def user_delete(name : String)
     validate!(name)
 
-    stub.user_delete(Etcdserverpb::AuthUserDeleteRequest.new(name: name)).is_a?(Etcdserverpb::AuthUserDeleteResponse)
+    @api.with_retry do
+      stub.user_delete(Etcdserverpb::AuthUserDeleteRequest.new(name: name)).is_a?(Etcdserverpb::AuthUserDeleteResponse)
+    end
   end
 
   # auth/user/get
   def user_get(name : String)
     validate!(name)
 
-    stub.user_get(Etcdserverpb::AuthUserGetRequest.new(name: name)).roles
+    @api.with_retry do
+      stub.user_get(Etcdserverpb::AuthUserGetRequest.new(name: name)).roles
+    end
   end
 
   # auth/user/grant
   def user_grant(role : String, user : String)
-    stub.user_grant_role(Etcdserverpb::AuthUserGrantRoleRequest.new(user: user, role: role)).is_a?(Etcdserverpb::AuthUserGrantRoleResponse)
+    @api.with_retry do
+      stub.user_grant_role(Etcdserverpb::AuthUserGrantRoleRequest.new(user: user, role: role)).is_a?(Etcdserverpb::AuthUserGrantRoleResponse)
+    end
   end
 
   # auth/user/list
   def user_list
-    stub.user_list(Etcdserverpb::AuthUserListRequest.new).users || [] of String
+    @api.with_retry do
+      stub.user_list(Etcdserverpb::AuthUserListRequest.new).users || [] of String
+    end
   end
 
   # auth/user/revoke
   def user_revoke(name : String, role : String)
     validate!(name)
-    stub.user_revoke_role(Etcdserverpb::AuthUserRevokeRoleRequest.new(user: name, role: role)).is_a?(Etcdserverpb::AuthUserRevokeRoleResponse)
+    @api.with_retry do
+      stub.user_revoke_role(Etcdserverpb::AuthUserRevokeRoleRequest.new(user: name, role: role)).is_a?(Etcdserverpb::AuthUserRevokeRoleResponse)
+    end
   end
 
   private def validate!(name : String)

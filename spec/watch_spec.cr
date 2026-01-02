@@ -43,16 +43,45 @@ module Etcd
         received += events
       end
 
-      begin
-        spawn { watcher.start }
-      rescue
-      end
-
+      spawn { watcher.start }
+      
       client = Etcd.from_env
       lease = client.lease.grant ttl
       client.kv.put(key0, value0, lease: lease.id)
       client.kv.put(key1, value1, lease: lease.id)
 
+      sleep 10.milliseconds
+
+      received.size.should eq 2
+      first, second = received
+
+      first.kv.key.should eq key0
+      first.kv.value.should eq value0
+
+      second.kv.key.should eq key1
+      second.kv.value.should eq value1
+
+      watcher.stop
+    end
+
+    it "reconnects on error" do
+      key0, value0 = "#{TEST_PREFIX}/foo", "bar"
+      key1, value1 = "#{TEST_PREFIX}/foot", "bath"
+
+      received = [] of Etcd::Model::WatchEvent
+      watcher = Etcd.from_env.watch.watch_prefix(key0) do |events|
+        received += events
+      end
+
+      Log.warn {"Watcher api client object id: #{watcher.api.client.object_id}"}
+
+      spawn { watcher.start }
+      
+      client = Etcd.from_env
+      client.kv.put(key0, value0)
+      client.kv.api.config.http2.try(&.close)
+      client.kv.put(key1, value1)
+      
       sleep 10.milliseconds
 
       received.size.should eq 2
@@ -79,12 +108,8 @@ module Etcd
           received += events
         end
 
-        begin
-          spawn { watcher.start }
-          Fiber.yield
-        rescue
-        end
-
+        spawn { watcher.start }
+        
         client = Etcd.from_env
 
         lease = client.lease.grant ttl
@@ -108,12 +133,8 @@ module Etcd
           received += events
         end
 
-        begin
-          spawn { watcher.start }
-          Fiber.yield
-        rescue
-        end
-
+        spawn { watcher.start }
+        
         client = Etcd.from_env
         lease = client.lease.grant ttl
         client.kv.put(key0, value0, lease: lease.id)

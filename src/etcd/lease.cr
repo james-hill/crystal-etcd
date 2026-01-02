@@ -4,8 +4,8 @@ module Etcd
   class Lease 
     getter stub : Etcdserverpb::Lease::Stub
 
-    def initialize(@config : GRPC::Config)
-      @stub = Etcdserverpb::Lease::Stub.new(@config)
+    def initialize(@api : Etcd::Api)
+      @stub = Etcdserverpb::Lease::Stub.new(@api.config)
     end
 
     # /kv/lease/leases
