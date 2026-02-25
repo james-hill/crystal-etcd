@@ -22,10 +22,7 @@ class Etcd::Watch
     end
   end
 
-  getter stub : Etcdserverpb::KV::Stub
-  
   def initialize(@api : Etcd::Api)
-    @stub = Etcdserverpb::KV::Stub.new(@api.config)
   end
 
 
@@ -113,8 +110,6 @@ class Etcd::Watch
     getter watch_id : Int64? = nil
     getter stream_id : Int32? = nil
 
-    getter stub : Etcdserverpb::Watch::Stub
-
     def initialize(
       @key,
       @api = Etcd::Api,
@@ -124,8 +119,6 @@ class Etcd::Watch
       @progress_notify = nil,
       &@block : Array(Model::WatchEvent) -> Void
     )
-      @stub = Etcdserverpb::Watch::Stub.new(@api.config)
-
       @range_end = case range_end
       when String
         range_end
@@ -171,15 +164,18 @@ class Etcd::Watch
           headers = HTTP::Headers{
             ":method" => "POST",
             ":path" => "/etcdserverpb.Watch/Watch",
-            "content-type" => "application/grpc",  
+            "content-type" => "application/grpc",
           }
           data = GRPC.encode_protobuf(request)
-          
+
+          # Reset watch_id so we capture the new one after reconnection
+          @watch_id = nil
+
           # This will yield each time there's a data frame
           @api.max_retries = 0
           if (http2 = @api.config.http2) && !http2.connection.closed?
             channel = http2.open_stream(headers, data: data)
-            
+
             while payload = channel.receive?
               payload = IO::Memory.new(payload)
               if payload.size > 0

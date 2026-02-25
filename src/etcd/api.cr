@@ -165,13 +165,13 @@ class Etcd::Api
 
           return result
         end
-      rescue error : IO::Error | Etcd::ConnectionError
+      rescue error : IO::Error | Etcd::ConnectionError | Channel::ClosedError
         if @retries_performed < max_retries
           reconnect
           @retries_performed += 1
         else
           raise error
-        end     
+        end
       rescue error : GRPC::BadStatus
         # if the error is UNAUTHENTICATED then we may just need to rotate the auth token
         if error.code == GRPC::StatusCode::UNAUTHENTICATED
