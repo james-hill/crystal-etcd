@@ -75,9 +75,11 @@ class Etcd::Api
     @config ||= GRPC::Config.new(http2: create_http2_client)
   end
 
+  # A fresh connection carries no session, so re-run username/password auth when the client has one
   def reconnect
     config.http2.try(&.close)
     config.http2 = create_http2_client
+    reauthenticate
   end
 
   # will do nothing unless the client has a username/password
@@ -116,7 +118,9 @@ class Etcd::Api
     config.http2
   end  
 
+  # Remembered so a reconnect can re-apply it to the new connection
   def auth_token=(token : String?)
+    @auth_token = token
     if http2 = config.http2
       if tok = token
         http2.default_headers["Authorization"] = tok

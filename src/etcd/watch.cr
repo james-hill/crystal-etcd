@@ -5,7 +5,8 @@ require "./utils"
 class Etcd::Watch
   include Utils
 
-  RECONNECT_SECONDS = 1
+  RECONNECT_SECONDS     =  1
+  RECONNECT_MAX_SECONDS = 30
 
   # Types for watch event filters
   enum Filter
@@ -82,6 +83,57 @@ class Etcd::Watch
     )
   end
 
+  # Reassembles gRPC length-prefixed messages from HTTP/2 DATA payloads.
+  #
+  # A payload is whatever bytes arrived on the stream: one message can span several
+  # payloads and one payload can carry several messages, so decode only once a whole
+  # message is buffered.
+  class MessageBuffer
+    # Compression flag (1 byte) + big-endian length (4 bytes)
+    HEADER_BYTES = 5
+
+    # A watch response is never this large; a bigger length is a framing error
+    MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+
+    @buffer = Bytes.empty
+
+    def <<(payload : Bytes) : self
+      return self if payload.empty?
+
+      if @buffer.empty?
+        @buffer = payload
+      else
+        joined = Bytes.new(@buffer.size + payload.size)
+        joined.copy_from(@buffer)
+        (joined + @buffer.size).copy_from(payload)
+        @buffer = joined
+      end
+
+      self
+    end
+
+    # The next complete message, or nil until more bytes arrive
+    def next_message : Etcdserverpb::WatchResponse?
+      return nil if @buffer.size < HEADER_BYTES
+
+      length = IO::ByteFormat::BigEndian.decode(Int32, @buffer[1, 4])
+      if length < 0 || length > MAX_MESSAGE_BYTES
+        raise Etcd::WatchError.new "Impossible gRPC message length #{length}; the watch stream is out of sync"
+      end
+
+      total = HEADER_BYTES + length
+      return nil if @buffer.size < total
+
+      message = @buffer[HEADER_BYTES, length]
+      @buffer = @buffer + total
+      Etcdserverpb::WatchResponse.from_protobuf(IO::Memory.new(message))
+    end
+
+    def pending_bytes : Int32
+      @buffer.size
+    end
+  end
+
   # Wrapper for a watch session with etcd.
   #
   # ```
@@ -101,8 +153,10 @@ class Etcd::Watch
     private getter block : Proc(Array(Model::WatchEvent), Void)
     private getter range_end : String?
     private getter filters : Array(Watch::Filter)?
-    private getter start_revision : Int64?
     private getter progress_notify : Bool?
+
+    # Advances with every response so a reconnect resumes where the stream dropped
+    getter start_revision : Int64?
 
     private property event_channel : Channel(Array(Model::WatchEvent)) { Channel(Array(Model::WatchEvent)).new }
 
@@ -134,8 +188,70 @@ class Etcd::Watch
       self.event_channel = Channel(Array(Model::WatchEvent)).new if self.event_channel.closed?
       while event = self.event_channel.receive?
         # Don't forward empty events
-        @block.call(event) unless event.empty?
+        next if event.empty?
+
+        begin
+          @block.call(event)
+        rescue error
+          Log.error(exception: error) { "Watch subscriber raised; later events will still be delivered" }
+        end
       end
+    end
+
+    private def watch_request : Etcdserverpb::WatchRequest
+      filters = @filters.try(&.map(&.to_grpc)).try(&.compact)
+
+      Etcdserverpb::WatchRequest.new(
+        create_request: Etcdserverpb::WatchCreateRequest.new(
+          key: key.to_slice,
+          range_end: range_end.try(&.to_slice),
+          filters: filters,
+          start_revision: start_revision,
+          progress_notify: progress_notify,
+        )
+      )
+    end
+
+    # Reads payloads until the stream closes, handing each complete message to `handle_response`
+    private def consume(channel : Channel(Bytes), &) : Nil
+      messages = MessageBuffer.new
+
+      while payload = channel.receive?
+        messages << payload
+        while response = messages.next_message
+          yield response
+        end
+      end
+    end
+
+    # Returns false when etcd cancelled the watch and the stream must be re-created
+    private def handle_response(response : Etcdserverpb::WatchResponse) : Bool
+      # Very first data frame contains the watch ID
+      @watch_id ||= response.watch_id
+
+      if response.canceled
+        if (compacted = response.compact_revision) && compacted > 0
+          Log.warn { "Watch resumed past a compaction: revision #{start_revision} is gone, continuing from #{compacted + 1}; re-list to catch up" }
+          @start_revision = compacted + 1
+        else
+          Log.warn { "Watch cancelled by etcd: #{response.cancel_reason}" }
+        end
+        return false
+      end
+
+      # The creation ack carries the current revision, which would skip a replay from an older start_revision
+      if !response.created && (header = response.header) && (revision = header.revision) && revision > 0
+        @start_revision = revision + 1
+      end
+
+      if raw_events = response.events
+        events = raw_events.map { |grpc_event| Model::WatchEvent.from_grpc(grpc_event) }.compact
+        unless events.empty? || self.event_channel.closed?
+          self.event_channel.send(events)
+        end
+      end
+
+      true
     end
 
     # Start the watcher
@@ -145,73 +261,48 @@ class Etcd::Watch
 
       spawn { forward_events }
 
-      filters = @filters.try(&.map(&.to_grpc)).try(&.compact)
-
-      request = Etcdserverpb::WatchRequest.new(
-        create_request: Etcdserverpb::WatchCreateRequest.new(
-          key: key.to_slice,
-          range_end: range_end.try(&.to_slice),
-          filters: filters,
-          start_revision: start_revision,
-          progress_notify: progress_notify,            
-        )
-      )
-
-      @watching = true      
+      @watching = true
+      reconnect_seconds = RECONNECT_SECONDS
 
       while watching?
         begin
           headers = HTTP::Headers{
-            ":method" => "POST",
-            ":path" => "/etcdserverpb.Watch/Watch",
+            ":method"      => "POST",
+            ":path"        => "/etcdserverpb.Watch/Watch",
             "content-type" => "application/grpc",
           }
-          data = GRPC.encode_protobuf(request)
+          data = GRPC.encode_protobuf(watch_request)
 
           # Reset watch_id so we capture the new one after reconnection
           @watch_id = nil
 
-          # This will yield each time there's a data frame
           @api.max_retries = 0
           if (http2 = @api.config.http2) && !http2.connection.closed?
             channel = http2.open_stream(headers, data: data)
 
-            while payload = channel.receive?
-              payload = IO::Memory.new(payload)
-              if payload.size > 0
-                response = GRPC.decode_protobuf(payload, Etcdserverpb::WatchResponse)
-                
-                # Very first data frame contains the watch ID
-                unless @watch_id
-                  @watch_id = response.watch_id
-                end
-
-                if raw_events = response.events
-                  events = raw_events.map{|grpc_event| Model::WatchEvent.from_grpc(grpc_event)}.compact                
-                  unless events.empty? || self.event_channel.closed?
-                    self.event_channel.send(events) 
-                  end
-                end
-              else
-                Log.warn {"Empty payload received"}
-              end
+            consume(channel) do |response|
+              # Anything from etcd means the connection is healthy again
+              reconnect_seconds = RECONNECT_SECONDS
+              break unless handle_response(response)
             end
 
-            Log.warn {"Watcher stream closed, sleeping and reconnecting"}            
+            Log.warn { "Watcher stream closed, sleeping and reconnecting" }
           else
-            raise "No connected http2 object... sleeping and reconnecting"            
-          end          
-          
+            raise "No connected http2 object... sleeping and reconnecting"
+          end
         rescue error
-          Log.warn(exception: error) {"Watcher error while sleeping and reconnecting"}          
+          Log.warn(exception: error) { "Watcher error while sleeping and reconnecting" }
         end
-        
-        sleep Time::Span.new(seconds: RECONNECT_SECONDS)
 
-        begin 
+        break unless watching?
+
+        sleep Time::Span.new(seconds: reconnect_seconds)
+        reconnect_seconds = Math.min(reconnect_seconds * 2, RECONNECT_MAX_SECONDS)
+
+        begin
           @api.reconnect
         rescue error
-          Log.warn(exception: error) {"Watcher error during reconnection"}
+          Log.warn(exception: error) { "Watcher error during reconnection" }
         end
       end
     end
@@ -219,7 +310,7 @@ class Etcd::Watch
     # Close the client and stop the watcher
     def stop
       @watching = false
-      self.event_channel.close      
+      self.event_channel.close
     end
   end
 end
