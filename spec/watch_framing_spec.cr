@@ -111,7 +111,7 @@ module Etcd
       buffer = Watch::MessageBuffer.new
       buffer << header.to_slice
 
-      expect_raises(Etcd::WatchError, /Impossible gRPC message length/) do
+      expect_raises(Etcd::FramingError, /Impossible gRPC message length/) do
         buffer.next_message
       end
     end
@@ -124,7 +124,7 @@ module Etcd
       buffer = Watch::MessageBuffer.new
       buffer << header.to_slice
 
-      expect_raises(Etcd::WatchError) do
+      expect_raises(Etcd::FramingError) do
         buffer.next_message
       end
     end

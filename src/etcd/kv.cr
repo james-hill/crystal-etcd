@@ -107,9 +107,15 @@ module Etcd
       end
     end
 
-    def compaction(physical : Bool, revision : Int64)
+    # Discards key history older than `revision`.
+    #
+    # `physical: true` blocks until the compaction has been applied to the backend.
+    # etcd answers an already-compacted revision with OUT_OF_RANGE ("required revision
+    # has been compacted") and a revision past the current one with "is a future revision";
+    # both surface as `GRPC::BadStatus`.
+    def compaction(physical : Bool, revision : Int64) : Bool
       @api.with_retry do
-        stub.compaction(Etcdserverpb::CompactionRequest.new(physical:  physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
+        stub.compact(Etcdserverpb::CompactionRequest.new(physical: physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
       end
     end
 

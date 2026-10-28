@@ -14,6 +14,10 @@ module Etcd
   class WatchError < Error
   end
 
+  # A gRPC stream carried bytes that cannot be a length-prefixed message
+  class FramingError < Error
+  end
+
   class ConnectionError < Error
     def initialize
       super("Could not connect to any etcd endpoints")

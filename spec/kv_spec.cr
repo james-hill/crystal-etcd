@@ -89,6 +89,50 @@ module Etcd
       key_present.should be_true
     end
 
+    describe "compaction" do
+      it "discards history older than the revision" do
+        client = Etcd.from_env
+        key = "#{TEST_PREFIX}/compact"
+        client.kv.put(key, "first")
+        first_revision = client.kv.range(key).kvs.first.mod_revision.not_nil!
+        client.kv.put(key, "second")
+
+        client.kv.compaction(false, first_revision + 1).should be_true
+
+        error = expect_raises(GRPC::BadStatus, /required revision has been compacted/) do
+          client.kv.stub.range(Etcdserverpb::RangeRequest.new(key: key.to_slice, revision: first_revision))
+        end
+        error.code.should eq GRPC::StatusCode::OUT_OF_RANGE
+
+        # The compacted history is gone but the key itself is intact
+        client.kv.get(key).should eq "second"
+      end
+
+      it "raises when the revision is already compacted" do
+        client = Etcd.from_env
+        key = "#{TEST_PREFIX}/compact"
+        client.kv.put(key, "first")
+        client.kv.put(key, "second")
+        revision = client.kv.range(key).kvs.first.mod_revision.not_nil!
+
+        client.kv.compaction(false, revision).should be_true
+
+        expect_raises(GRPC::BadStatus, /required revision has been compacted/) do
+          client.kv.compaction(false, revision)
+        end
+      end
+
+      it "raises when the revision is in the future" do
+        client = Etcd.from_env
+        client.kv.put("#{TEST_PREFIX}/compact", "first")
+        revision = client.kv.range("#{TEST_PREFIX}/compact").kvs.first.mod_revision.not_nil!
+
+        expect_raises(GRPC::BadStatus, /future revision/) do
+          client.kv.compaction(false, revision + 1_000_000)
+        end
+      end
+    end
+
     it "gets a key" do
       client = Etcd.from_env
 

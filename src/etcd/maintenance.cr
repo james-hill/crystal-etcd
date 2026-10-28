@@ -1,4 +1,5 @@
 require "./model/maintenance"
+require "./message_buffer"
 
 class Etcd::Maintenance
   getter stub : Etcdserverpb::Maintenance::Stub
@@ -33,22 +34,58 @@ class Etcd::Maintenance
     stub.defragment(Etcdserverpb::DefragmentRequest.new).is_a?(Etcdserverpb::DefragmentResponse)
   end
 
-  def hash(revision : String)
-    stub.hash(::Etcdserverpb::HashRequest.new).hash
+  # Hash of the whole backend, including key history
+  def hash : UInt32?
+    stub.hash(Etcdserverpb::HashRequest.new).hash
   end
 
-  # TODO: this deadlocks currently
-  def snapshot
-    response = stub.snapshot(Etcdserverpb::SnapshotRequest.new)
-    if blob = response.blob
-      Model::SnapshotResult.new(
-        blob: blob,
-        remaining_bytes: response.remaining_bytes || 0_u64,
-        version: response.version,
-      )
-    else
-      raise "No blob in response"
+  # Hash of the key-value state as of `revision` (0 means the current revision)
+  def hash_kv(revision : Int64 = 0_i64) : Model::HashKv
+    Model::HashKv.from_grpc(stub.hash_kv(Etcdserverpb::HashKVRequest.new(revision: revision)))
+  end
+
+  # Streams a backend snapshot, yielding each chunk's bytes and the bytes etcd still has to send.
+  #
+  # etcd ends the stream with an integrity hash (sha256 of the data, padded to 512 bytes), which
+  # `etcdctl snapshot restore` expects at the end of the file, so keep every chunk.
+  def snapshot(& : Bytes, UInt64 ->) : Nil
+    http2 = @api.config.http2
+    raise Etcd::ConnectionError.new if http2.nil? || http2.closed?
+
+    headers = HTTP::Headers{
+      ":method"      => "POST",
+      ":path"        => "/etcdserverpb.Maintenance/Snapshot",
+      "content-type" => "application/grpc",
+    }
+    channel = http2.open_stream(headers, data: GRPC.encode_protobuf(Etcdserverpb::SnapshotRequest.new))
+    messages = MessageBuffer(Etcdserverpb::SnapshotResponse).new
+
+    chunks = 0
+    data_done = false
+    while payload = channel.receive?
+      messages << payload
+      while response = messages.next_message
+        chunks += 1
+        remaining = response.remaining_bytes || 0_u64
+        yield (response.blob || Bytes.empty), remaining
+
+        # The hash chunk follows the last data chunk; the server closes the stream after it
+        return if data_done
+        data_done = remaining.zero?
+      end
     end
+
+    raise Etcd::Error.new "Snapshot stream closed before etcd sent any data" if chunks.zero?
+  end
+
+  # Writes a backend snapshot to `io`, returning the number of bytes written
+  def snapshot(io : IO) : Int64
+    written = 0_i64
+    snapshot do |blob, _remaining|
+      io.write(blob)
+      written += blob.size
+    end
+    written
   end
 
   # Queries status of etcd instance
@@ -73,7 +110,8 @@ class Etcd::Maintenance
     status.leader
   end
 
-  def transfer_leadership(target_id : UInt64)
-    stub.move_leadership(Etcdserverpb::MoveLeaderRequest.new(targetID: target_id)).is_a?(Etcdserverpb::MoveLeaderResponse)
+  # Asks the current leader to hand leadership to member `target_id`
+  def transfer_leadership(target_id : UInt64) : Bool
+    stub.move_leader(Etcdserverpb::MoveLeaderRequest.new(target_id: target_id)).is_a?(Etcdserverpb::MoveLeaderResponse)
   end
 end

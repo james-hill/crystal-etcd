@@ -65,7 +65,6 @@ module Etcd::Model
       else
         raise "Unknown alarm type: #{self}"
       end
-
     end
   end
 
@@ -77,27 +76,38 @@ module Etcd::Model
     end
   end
 
-  struct SnapshotResult
-    getter blob : Bytes # Bytes
-    getter remaining_bytes : UInt64
-    getter version : String
+  struct HashKv
+    getter hash : UInt32
+    getter compact_revision : Int64
+    getter hash_revision : Int64
 
-    def initialize(@blob, @remaining_bytes, @version)
+    def self.from_grpc(response : Etcdserverpb::HashKVResponse)
+      new(
+        hash: response.hash || 0_u32,
+        compact_revision: response.compact_revision || 0_i64,
+        hash_revision: response.hash_revision || 0_i64,
+      )
+    end
+
+    def initialize(@hash, @compact_revision, @hash_revision)
     end
   end
 
   struct Status
     getter! db_size : Int64
     getter! db_size_in_use : Int64
-    getter! errors : Array(String)?
-    getter! is_learner : Bool?
+    getter errors : Array(String)
+    getter is_learner : Bool
     getter! leader : UInt64
     getter! raft_applied_index : UInt64
     getter! raft_index : UInt64
     getter! raft_term : UInt64
     getter! version : String
 
-    def initialize(@db_size, @db_size_in_use, @errors, @is_learner, @leader, @raft_applied_index, @raft_index, @raft_term, @version)
+    # etcd leaves `errors` and `is_learner` unset when there is nothing to report
+    def initialize(@db_size, @db_size_in_use, errors : Array(String)?, is_learner : Bool?, @leader, @raft_applied_index, @raft_index, @raft_term, @version)
+      @errors = errors || [] of String
+      @is_learner = is_learner || false
     end
   end
 end
