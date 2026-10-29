@@ -156,6 +156,7 @@ class Etcd::Api
 
   # wraps a block and attempts to deal with down nodes and expired auth tokens
   def with_retry(&)
+    timed_out = false
     loop do
       begin
         if config.http2.try(&.closed?)  
@@ -169,6 +170,12 @@ class Etcd::Api
 
           return result
         end
+      rescue error : IO::TimeoutError
+        # the connection was up and the server did not answer: try one other endpoint, then give up
+        # rather than stall for max_retries timeouts in a row
+        raise error if timed_out
+        timed_out = true
+        reconnect
       rescue error : IO::Error | Etcd::ConnectionError | Channel::ClosedError
         if @retries_performed < max_retries
           reconnect
