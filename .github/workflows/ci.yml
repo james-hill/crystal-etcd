@@ -46,6 +46,6 @@ jobs:
         with:
           crystal: ${{ matrix.crystal }}
       - uses: actions/checkout@v4
-      - run: shards install --skip-postinstall
+      - run: shards install --skip-postinstall --skip-executables
       # The http2 fork calls Crystal::Scheduler, which Crystal 1.21+ only has without MT
       - run: crystal spec -Dwithout_mt --order random --tag "~localonly"
