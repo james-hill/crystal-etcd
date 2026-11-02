@@ -9,7 +9,7 @@ module Etcd
       values = ["a", "b", "c", "d", "e"]
 
       received = [] of Etcd::Model::WatchEvent
-      watcher = Etcd.from_env.watch.watch(key) do |events|
+      watcher = Etcd.from_env.watch.watch(key, start_revision: next_revision) do |events|
         received += events
       end
 
@@ -23,7 +23,7 @@ module Etcd
         client.kv.put(key, v, lease: lease.id)
       end
 
-      sleep 10.milliseconds
+      wait_for { received.size >= values.size }
 
       received.size.should eq values.size
       received.map(&.kv.value).should eq values
@@ -39,7 +39,7 @@ module Etcd
       key1, value1 = "#{TEST_PREFIX}/foot", "bath"
 
       received = [] of Etcd::Model::WatchEvent
-      watcher = Etcd.from_env.watch.watch_prefix(key0) do |events|
+      watcher = Etcd.from_env.watch.watch_prefix(key0, start_revision: next_revision) do |events|
         received += events
       end
 
@@ -50,7 +50,7 @@ module Etcd
       client.kv.put(key0, value0, lease: lease.id)
       client.kv.put(key1, value1, lease: lease.id)
 
-      sleep 10.milliseconds
+      wait_for { received.size >= 2 }
 
       received.size.should eq 2
       first, second = received
@@ -69,7 +69,7 @@ module Etcd
       key1, value1 = "#{TEST_PREFIX}/foot", "bath"
 
       received = [] of Etcd::Model::WatchEvent
-      watcher = Etcd.from_env.watch.watch_prefix(key0) do |events|
+      watcher = Etcd.from_env.watch.watch_prefix(key0, start_revision: next_revision) do |events|
         received += events
       end
 
@@ -82,7 +82,7 @@ module Etcd
       client.kv.api.config.http2.try(&.close)
       client.kv.put(key1, value1)
 
-      sleep 10.milliseconds
+      wait_for { received.size >= 2 }
 
       received.size.should eq 2
       first, second = received
@@ -104,7 +104,7 @@ module Etcd
         key1, value1 = "#{TEST_PREFIX}/foot", "bath"
 
         received = [] of Etcd::Model::WatchEvent
-        watcher = Etcd.from_env.watch.watch_prefix(key0, filters: [Etcd::Watch::Filter::NOPUT]) do |events|
+        watcher = Etcd.from_env.watch.watch_prefix(key0, filters: [Etcd::Watch::Filter::NOPUT], start_revision: next_revision) do |events|
           received += events
         end
 
@@ -117,6 +117,7 @@ module Etcd
         client.kv.delete(key0)
         client.kv.put(key1, value1, lease: lease.id)
 
+        wait_for { received.size >= 1 }
         received.size.should eq 1
 
         watcher.stop
@@ -129,7 +130,7 @@ module Etcd
         key1, value1 = "#{TEST_PREFIX}/foot", "bath"
 
         received = [] of Etcd::Model::WatchEvent
-        watcher = Etcd.from_env.watch.watch_prefix(key0, filters: [Etcd::Watch::Filter::NODELETE]) do |events|
+        watcher = Etcd.from_env.watch.watch_prefix(key0, filters: [Etcd::Watch::Filter::NODELETE], start_revision: next_revision) do |events|
           received += events
         end
 
@@ -141,6 +142,7 @@ module Etcd
         client.kv.put(key1, value1, lease: lease.id)
         client.kv.delete(key0)
 
+        wait_for { received.size >= 2 }
         received.size.should eq 2
         first, second = received
 

@@ -30,3 +30,18 @@ Spec.before_each do
   rescue
   end
 end
+
+# A watch starting here sees every later write, however late it registers with etcd
+def next_revision : Int64
+  marker = "#{TEST_PREFIX}_revision_marker"
+  client = Etcd.from_env
+  client.kv.put(marker, "")
+  (client.kv.range(marker).kvs.first.mod_revision || raise "marker has no revision") + 1
+end
+
+def wait_for(attempts = 500, &)
+  attempts.times do
+    return if yield
+    sleep 10.milliseconds
+  end
+end
