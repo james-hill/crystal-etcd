@@ -1,4 +1,4 @@
-## Generated from google/api/http.proto for google.api
+# # Generated from google/api/http.proto for google.api
 require "grpc/service"
 
 module Google

@@ -1,7 +1,7 @@
 require "./model/lease"
 
 module Etcd
-  class Lease 
+  class Lease
     getter stub : Etcdserverpb::Lease::Stub
 
     def initialize(@api : Etcd::Api)
@@ -41,8 +41,8 @@ module Etcd
     # id    id of 0 prompts etcd to assign any id to lease  UInt64
     def grant(ttl : Int64 = @ttl, id = 0)
       Model::Grant.from_grpc(
-      stub.lease_grant(Etcdserverpb::LeaseGrantRequest.new(ttl: ttl, id: id))
-      )    
+        stub.lease_grant(Etcdserverpb::LeaseGrantRequest.new(ttl: ttl, id: id))
+      )
     end
 
     # /lease/keepalive

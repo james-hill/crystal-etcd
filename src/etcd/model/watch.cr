@@ -2,14 +2,14 @@ require "./base"
 require "./kv"
 
 module Etcd::Model
-  struct WatchError 
+  struct WatchError
     getter http_code : Int32
 
     def initialize(@http_code : Int32)
-    end  
+    end
   end
 
-  struct WatchEvent 
+  struct WatchEvent
     enum Type
       PUT
       DELETE
@@ -21,22 +21,22 @@ module Etcd::Model
           Etcd::Model::WatchEvent::Type::DELETE
         else
           Etcd::Model::WatchEvent::Type::PUT
-        end        
-      end     
+        end
+      end
     end
 
     # Empty type field indicates PUT event
     getter type : WatchEvent::Type? = WatchEvent::Type::PUT
     getter! kv : Kv
 
-    def self.from_grpc(grpc_event : Mvccpb::Event)      
+    def self.from_grpc(grpc_event : Mvccpb::Event)
       if kv = grpc_event.kv
         self.new(
           type: WatchEvent::Type.from_grpc(grpc_event.type),
           kv: Kv.from_grpc(kv)
         )
         # else do nothing - sometimes empty watch responses are used for progress notification
-      end      
+      end
     end
 
     def initialize(@type = WatchEvent::Type::PUT, @kv : Kv? = nil)

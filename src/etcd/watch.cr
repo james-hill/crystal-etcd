@@ -27,7 +27,6 @@ class Etcd::Watch
   def initialize(@api : Etcd::Api)
   end
 
-
   # Watches keys by prefix, passing events to a supplied block.
   # Exposes a synchronous interface to the watch session via `Etcd::Watcher`
   #
@@ -126,13 +125,13 @@ class Etcd::Watch
       &@block : Array(Model::WatchEvent) -> Void
     )
       @range_end = case range_end
-      when String
-        range_end
-      when Slice(UInt8)
-        String.new(range_end)
-      else
-        nil
-      end
+                   when String
+                     range_end
+                   when Slice(UInt8)
+                     String.new(range_end)
+                   else
+                     nil
+                   end
     end
 
     # Pass events to captured block

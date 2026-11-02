@@ -44,13 +44,13 @@ module Etcd
     describe "users" do
       it "can be listed", tags: "localonly" do
         client = Etcd.from_env
-        client.auth.user_list.should be_a Array(String)        
+        client.auth.user_list.should be_a Array(String)
       end
 
       it "can have their roles listed", tags: "localonly" do
         client = Etcd.from_env
-        client.auth.user_add(TEST_USER, TEST_PASSWORD) 
-        client.auth.user_grant(ROOT_ROLE, TEST_USER)       
+        client.auth.user_add(TEST_USER, TEST_PASSWORD)
+        client.auth.user_grant(ROOT_ROLE, TEST_USER)
         client.auth.user_get(TEST_USER).should be_a Array(String)
       end
     end
@@ -110,9 +110,9 @@ module Etcd
         tls_context = OpenSSL::SSL::Context::Client.from_hash(
           {
             "verify_mode" => "none",
-            "key" => "#{__DIR__}/certs/test_client_key.pem",
-            "cert" => "#{__DIR__}/certs/test_client_cert.pem",
-            "ca" => "#{__DIR__}/certs/test_ca_cert.pem",
+            "key"         => "#{__DIR__}/certs/test_client_key.pem",
+            "cert"        => "#{__DIR__}/certs/test_client_cert.pem",
+            "ca"          => "#{__DIR__}/certs/test_ca_cert.pem",
           }
         )
 
@@ -123,5 +123,3 @@ module Etcd
     end
   end
 end
-
-

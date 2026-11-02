@@ -38,7 +38,7 @@ module Etcd
         ignore_value: ignore_value,
         ignore_lease: ignore_lease,
       )
-      
+
       @api.with_retry do
         response = stub.put(request)
 
@@ -48,13 +48,13 @@ module Etcd
 
     # Deletes key or range of keys
     # Note: base64_keys is deprected now that we use gRPC
-    def delete(key, range_end : Slice(UInt8)? = nil, base64_keys : Bool = true, prev_kv = false )
+    def delete(key, range_end : Slice(UInt8)? = nil, base64_keys : Bool = true, prev_kv = false)
       request = Etcdserverpb::DeleteRangeRequest.new(
         key: key.to_slice,
         range_end: range_end,
         prev_kv: prev_kv,
       )
-      
+
       @api.with_retry do
         Model::Delete.from_grpc(stub.delete_range(request))
       end
@@ -131,8 +131,8 @@ module Etcd
           key: key.to_slice,
           value: "0".to_slice,
           target: Etcdserverpb::Compare::CompareTarget::VERSION,
-          result: Etcdserverpb::Compare::CompareResult::EQUAL,       
-        )
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,
+        ),
       ]
 
       success = [
@@ -143,7 +143,7 @@ module Etcd
             lease: lease,
             ignore_lease: false,
           )
-        )         
+        ),
       ]
 
       txn(compare, success)
@@ -159,14 +159,14 @@ module Etcd
             key: key_d,
             value: "0".to_slice,
             target: Etcdserverpb::Compare::CompareTarget::VERSION,
-            result: Etcdserverpb::Compare::CompareResult::EQUAL,       
+            result: Etcdserverpb::Compare::CompareResult::EQUAL,
           ),
           Etcdserverpb::Compare.new(
             key: key_o,
             value: "0".to_slice,
             target: Etcdserverpb::Compare::CompareTarget::VERSION,
-            result: Etcdserverpb::Compare::CompareResult::NOT_EQUAL,       
-          ),      
+            result: Etcdserverpb::Compare::CompareResult::NOT_EQUAL,
+          ),
         ]
 
         success = [
@@ -198,14 +198,14 @@ module Etcd
       encoded_key = key.to_slice
       encoded_value = value.to_slice
       encoded_previous_value = previous_value.to_slice
-      
+
       compare = [
         Etcdserverpb::Compare.new(
           key: encoded_key,
           value: encoded_previous_value,
           target: Etcdserverpb::Compare::CompareTarget::VALUE,
-          result: Etcdserverpb::Compare::CompareResult::EQUAL,       
-        )
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,
+        ),
       ]
 
       success = [
@@ -215,7 +215,7 @@ module Etcd
             value: encoded_value,
             lease: lease_id,
           )
-        )         
+        ),
       ]
 
       txn(compare, success)

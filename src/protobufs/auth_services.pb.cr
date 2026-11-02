@@ -1,4 +1,4 @@
-## Generated from auth.proto for authpb
+# # Generated from auth.proto for authpb
 require "grpc/service"
 
 module Authpb

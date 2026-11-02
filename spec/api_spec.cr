@@ -38,7 +38,7 @@ module Etcd
 
       client.kv.put("#{TEST_PREFIX}_endpoint_test", "before_failure")
 
-      client.api.reconnect  # this will hit the bad endpoint
+      client.api.reconnect # this will hit the bad endpoint
 
       client.kv.put("#{TEST_PREFIX}_endpoint_test", "after_failure")
     end
@@ -58,24 +58,24 @@ module Etcd
 
     it "should bail out with a connection error if a single endpoint fails" do
       expect_raises(Etcd::ConnectionError) do
-        client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))        
+        client = Etcd::Client.new(URI.parse(NONEXISTENT_ENDPOINT))
       end
     end
 
     it "should bail out with a connection error if all endpoints fail" do
       expect_raises(Etcd::ConnectionError) do
         client = Etcd::Client.new(
-            endpoints: [
+          endpoints: [
             URI.parse(NONEXISTENT_ENDPOINT),
             URI.parse(NONEXISTENT_ENDPOINT),
-            ]
+          ]
         )
       end
-    end    
+    end
 
     it "reconnects on error" do
       key0, value0 = "#{TEST_PREFIX}/foo", "bar"
-      
+
       client = Etcd.from_env
       client.api.max_retries = 1
       client.kv.put(key0, value0)
@@ -85,7 +85,7 @@ module Etcd
 
     it "respects no reconnects on error" do
       key0, value0 = "#{TEST_PREFIX}/foo", "bar"
-      
+
       client = Etcd.from_env
       client.api.max_retries = 0
       client.kv.put(key0, value0)

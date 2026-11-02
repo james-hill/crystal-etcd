@@ -1,4 +1,4 @@
-## Generated from rpc.proto for etcdserverpb
+# # Generated from rpc.proto for etcdserverpb
 require "grpc/service"
 
 require "./kv.pb.cr"
@@ -19,6 +19,7 @@ module Etcdserverpb
     rpc Txn, receives: ::Etcdserverpb::TxnRequest, returns: ::Etcdserverpb::TxnResponse
     rpc Compact, receives: ::Etcdserverpb::CompactionRequest, returns: ::Etcdserverpb::CompactionResponse
   end
+
   abstract class Etcdserverpb::Watch
     include GRPC::Service
 
@@ -26,6 +27,7 @@ module Etcdserverpb
 
     rpc Watch, receives: ::Etcdserverpb::WatchRequest, returns: ::Etcdserverpb::WatchResponse
   end
+
   abstract class Etcdserverpb::Lease
     include GRPC::Service
 
@@ -37,6 +39,7 @@ module Etcdserverpb
     rpc LeaseTimeToLive, receives: ::Etcdserverpb::LeaseTimeToLiveRequest, returns: ::Etcdserverpb::LeaseTimeToLiveResponse
     rpc LeaseLeases, receives: ::Etcdserverpb::LeaseLeasesRequest, returns: ::Etcdserverpb::LeaseLeasesResponse
   end
+
   abstract class Etcdserverpb::Cluster
     include GRPC::Service
 
@@ -48,6 +51,7 @@ module Etcdserverpb
     rpc MemberList, receives: ::Etcdserverpb::MemberListRequest, returns: ::Etcdserverpb::MemberListResponse
     rpc MemberPromote, receives: ::Etcdserverpb::MemberPromoteRequest, returns: ::Etcdserverpb::MemberPromoteResponse
   end
+
   abstract class Etcdserverpb::Maintenance
     include GRPC::Service
 
@@ -62,6 +66,7 @@ module Etcdserverpb
     rpc MoveLeader, receives: ::Etcdserverpb::MoveLeaderRequest, returns: ::Etcdserverpb::MoveLeaderResponse
     rpc Downgrade, receives: ::Etcdserverpb::DowngradeRequest, returns: ::Etcdserverpb::DowngradeResponse
   end
+
   abstract class Etcdserverpb::Auth
     include GRPC::Service
 

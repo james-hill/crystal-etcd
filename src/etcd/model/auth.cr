@@ -1,7 +1,7 @@
 require "./base"
 
 module Etcd::Model
-  struct Permissions 
+  struct Permissions
     getter perm = [] of Permission
   end
 
@@ -45,5 +45,4 @@ module Etcd::Model
     def initialize(@key, @perm_type = PermissionType::READ, @range_end : String? = nil)
     end
   end
-
 end

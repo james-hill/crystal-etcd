@@ -1,4 +1,4 @@
-## Generated from version.proto for versionpb
+# # Generated from version.proto for versionpb
 require "grpc/service"
 
 require "./descriptor.pb.cr"

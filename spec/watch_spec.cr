@@ -44,7 +44,7 @@ module Etcd
       end
 
       spawn { watcher.start }
-      
+
       client = Etcd.from_env
       lease = client.lease.grant ttl
       client.kv.put(key0, value0, lease: lease.id)
@@ -73,15 +73,15 @@ module Etcd
         received += events
       end
 
-      Log.warn {"Watcher api client object id: #{watcher.api.client.object_id}"}
+      Log.warn { "Watcher api client object id: #{watcher.api.client.object_id}" }
 
       spawn { watcher.start }
-      
+
       client = Etcd.from_env
       client.kv.put(key0, value0)
       client.kv.api.config.http2.try(&.close)
       client.kv.put(key1, value1)
-      
+
       sleep 10.milliseconds
 
       received.size.should eq 2
@@ -109,7 +109,7 @@ module Etcd
         end
 
         spawn { watcher.start }
-        
+
         client = Etcd.from_env
 
         lease = client.lease.grant ttl
@@ -134,7 +134,7 @@ module Etcd
         end
 
         spawn { watcher.start }
-        
+
         client = Etcd.from_env
         lease = client.lease.grant ttl
         client.kv.put(key0, value0, lease: lease.id)

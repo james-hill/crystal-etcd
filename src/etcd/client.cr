@@ -53,17 +53,17 @@ class Etcd::Client
     @username = username
     @password = password
     api.auth_token = if (un = username) && (pw = password)
-      auth.authenticate(un, pw)
-    else
-      nil
-    end
+                       auth.authenticate(un, pw)
+                     else
+                       nil
+                     end
   end
 
   def maybe_authenticate
     if (username = @username) && (password = @password)
       authenticate(username, password)
     else
-      Log.debug {"Skipping username/password authentication because no password was supplied"} if @username
+      Log.debug { "Skipping username/password authentication because no password was supplied" } if @username
     end
   end
 

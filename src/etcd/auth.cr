@@ -56,7 +56,7 @@ class Etcd::Auth
   def role_get(role : String)
     @api.with_retry do
       perms = stub.role_get(Etcdserverpb::AuthRoleGetRequest.new(role: role)).perm || [] of Authpb::Permission
-    
+
       perms.map do |perm|
         if key = perm.key
           Model::Permission.new(
@@ -76,8 +76,8 @@ class Etcd::Auth
 
     request = Etcdserverpb::AuthRoleGrantPermissionRequest.new(
       name: role,
-      perm:  Authpb::Permission.new(
-        key:       perm_key.to_slice,
+      perm: Authpb::Permission.new(
+        key: perm_key.to_slice,
         perm_type: perm_type.to_etcd_perm_type,
         range_end: range_end,
       ),

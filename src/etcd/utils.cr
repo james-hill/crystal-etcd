@@ -21,5 +21,4 @@ module Etcd::Utils
   def prefix_range_end(prefix)
     Utils.prefix_range_end(prefix)
   end
-
 end

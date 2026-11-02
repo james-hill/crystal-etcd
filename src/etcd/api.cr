@@ -3,12 +3,12 @@ require "http"
 require "./error"
 
 class Etcd::Api
-  DEFAULT_HOST    = "localhost"
-  DEFAULT_PORT    = 2379
-  DEFAULT_DNS_TIMEOUT = 2.seconds
+  DEFAULT_HOST            = "localhost"
+  DEFAULT_PORT            = 2379
+  DEFAULT_DNS_TIMEOUT     = 2.seconds
   DEFAULT_CONNECT_TIMEOUT = 1.second
-  
-  getter client : Etcd::Client  # don't confuse this with the GRPC::Client!
+
+  getter client : Etcd::Client # don't confuse this with the GRPC::Client!
   getter endpoints = [] of URI
   getter tls_context : HTTP::Client::TLSContext = false
   getter dns_timeout : Time::Span = DEFAULT_DNS_TIMEOUT
@@ -18,9 +18,9 @@ class Etcd::Api
   # keeps track of the number of times we've tried to connect since the last successful request
   # (will be used to keep trying if we have multiple endpoints)
   getter retries_performed = 0
-  
+
   # If nil, will retry all endpoints
-  setter max_retries : Int32? = nil 
+  setter max_retries : Int32? = nil
 
   getter! config : GRPC::Config?
 
@@ -38,9 +38,7 @@ class Etcd::Api
     @auth_token : String? = nil,
     @max_retries : Int32? = nil,
   )
-
   end
-
 
   # Converts literals to string type
   protected def to_stringly(value)
@@ -52,7 +50,7 @@ class Etcd::Api
     when NamedTuple
       to_stringly(value.to_h)
     when String
-    value.as(String)
+      value.as(String)
     when Bool
       value
     else
@@ -60,7 +58,6 @@ class Etcd::Api
     end
   end
 
-  
   # current url (will change when rotate_endpoints is called)
   def url
     @endpoints.first
@@ -88,7 +85,7 @@ class Etcd::Api
     @client.maybe_authenticate
   end
 
-  protected def create_http2_client    
+  protected def create_http2_client
     @endpoints.size.times do
       begin
         if (host = url.host) && (port = url.port)
@@ -106,9 +103,9 @@ class Etcd::Api
           return client
         end
       rescue error : IO::Error
-        Log.warn(exception: error) {"Error connecting to #{url}... will rotate and try again, if possible"}
+        Log.warn(exception: error) { "Error connecting to #{url}... will rotate and try again, if possible" }
         rotate_endpoints
-      end        
+      end
     end
 
     raise Etcd::ConnectionError.new
@@ -116,7 +113,7 @@ class Etcd::Api
 
   def connection
     config.http2
-  end  
+  end
 
   # Remembered so a reconnect can re-apply it to the new connection
   def auth_token=(token : String?)
@@ -141,9 +138,9 @@ class Etcd::Api
   #     end
   #   end
   # end
-  
+
   def max_retries
-    case @max_retries 
+    case @max_retries
     when Int32
       @max_retries.as(Int32)
     when Nil
@@ -152,16 +149,15 @@ class Etcd::Api
       0
     end
   end
-  
 
   # wraps a block and attempts to deal with down nodes and expired auth tokens
   def with_retry(&)
     timed_out = false
     loop do
       begin
-        if config.http2.try(&.closed?)  
-          Log.warn {"Underlying http2 connection is closed"}
-          raise Etcd::ConnectionError.new 
+        if config.http2.try(&.closed?)
+          Log.warn { "Underlying http2 connection is closed" }
+          raise Etcd::ConnectionError.new
         else
           result = yield
 
@@ -186,13 +182,13 @@ class Etcd::Api
       rescue error : GRPC::BadStatus
         # if the error is UNAUTHENTICATED then we may just need to rotate the auth token
         if error.code == GRPC::StatusCode::UNAUTHENTICATED
-          Log.info {"Attempting to rotate auth token at #{url} because of GRPC error: UNAUTHENTICATED"}
+          Log.info { "Attempting to rotate auth token at #{url} because of GRPC error: UNAUTHENTICATED" }
           if @retries_performed < max_retries
             reauthenticate
             @retries_performed += 1
           else
             raise error
-          end     
+          end
         else
           # Don't trap any other sort of bad status
           raise error

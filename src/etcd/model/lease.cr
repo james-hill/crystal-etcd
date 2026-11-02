@@ -3,7 +3,7 @@ module Etcd::Model
     getter! id : Int64
 
     def self.from_grpc(lease : Etcdserverpb::LeaseStatus)
-      self.new(lease.id)      
+      self.new(lease.id)
     end
 
     def initialize(@id : Int64)
@@ -27,7 +27,7 @@ module Etcd::Model
     end
 
     def initialize(@id : Int64?, @ttl : Int64?, @granted_ttl : Int64?, @keys : Array(String)?)
-    end  
+    end
   end
 
   # Returns error
@@ -40,6 +40,6 @@ module Etcd::Model
 
     def self.from_grpc(lease : Etcdserverpb::LeaseGrantResponse)
       self.new(lease.id, lease.ttl)
-    end  
+    end
   end
 end

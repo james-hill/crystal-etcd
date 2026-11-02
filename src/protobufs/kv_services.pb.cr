@@ -1,4 +1,4 @@
-## Generated from kv.proto for mvccpb
+# # Generated from kv.proto for mvccpb
 require "grpc/service"
 
 module Mvccpb

@@ -1,4 +1,4 @@
-## Generated from google/api/annotations.proto for google.api
+# # Generated from google/api/annotations.proto for google.api
 require "grpc/service"
 
 require "./http.pb.cr"

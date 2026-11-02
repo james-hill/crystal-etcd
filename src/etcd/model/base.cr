@@ -3,5 +3,5 @@
 module Etcd::Model
   # Don't use this currently but nice to have all models inherit?
   private abstract struct Base
-  end  
+  end
 end

@@ -1,4 +1,4 @@
-## Generated from rpc.proto for etcdserverpb
+# # Generated from rpc.proto for etcdserverpb
 require "protobuf"
 
 require "./kv.pb.cr"
@@ -9,7 +9,7 @@ require "./annotations2.pb.cr"
 
 module Etcdserverpb
   enum AlarmType
-    NONE = 0
+    NONE    = 0
     NOSPACE = 1
     CORRUPT = 2
   end
@@ -28,16 +28,16 @@ module Etcdserverpb
   struct RangeRequest
     include ::Protobuf::Message
     enum SortOrder
-      NONE = 0
-      ASCEND = 1
+      NONE    = 0
+      ASCEND  = 1
       DESCEND = 2
     end
     enum SortTarget
-      KEY = 0
+      KEY     = 0
       VERSION = 1
-      CREATE = 2
-      MOD = 3
-      VALUE = 4
+      CREATE  = 2
+      MOD     = 3
+      VALUE   = 4
     end
 
     contract_of "proto3" do
@@ -135,18 +135,18 @@ module Etcdserverpb
   struct Compare
     include ::Protobuf::Message
     enum CompareResult
-      EQUAL = 0
-      GREATER = 1
-      LESS = 2
+      EQUAL     = 0
+      GREATER   = 1
+      LESS      = 2
       NOT_EQUAL = 3
-      NOTEQUAL = 3
+      NOTEQUAL  = 3
     end
     enum CompareTarget
       VERSION = 0
-      CREATE = 1
-      MOD = 2
-      VALUE = 3
-      LEASE = 4
+      CREATE  = 1
+      MOD     = 2
+      VALUE   = 3
+      LEASE   = 4
     end
 
     contract_of "proto3" do
@@ -265,7 +265,7 @@ module Etcdserverpb
   struct WatchCreateRequest
     include ::Protobuf::Message
     enum FilterType
-      NOPUT = 0
+      NOPUT    = 0
       NODELETE = 1
     end
 
@@ -569,8 +569,8 @@ module Etcdserverpb
   struct AlarmRequest
     include ::Protobuf::Message
     enum AlarmAction
-      GET = 0
-      ACTIVATE = 1
+      GET        = 0
+      ACTIVATE   = 1
       DEACTIVATE = 2
     end
 
@@ -603,8 +603,8 @@ module Etcdserverpb
     include ::Protobuf::Message
     enum DowngradeAction
       VALIDATE = 0
-      ENABLE = 1
-      CANCEL = 2
+      ENABLE   = 1
+      CANCEL   = 2
     end
 
     contract_of "proto3" do
@@ -950,4 +950,4 @@ module Etcdserverpb
       optional :header, ResponseHeader, 1
     end
   end
-  end
+end

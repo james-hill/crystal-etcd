@@ -1,7 +1,7 @@
 require "./base"
 
 module Etcd::Model
-  struct Kv 
+  struct Kv
     getter create_revision : Int64?
     getter key : String
     getter lease : Int64?
@@ -11,11 +11,11 @@ module Etcd::Model
 
     def self.from_grpc(kv : Mvccpb::KeyValue)
       value = case raw_value = kv.value
-        when Slice(UInt8)
-          String.new(raw_value)
-        else
-          nil
-        end
+              when Slice(UInt8)
+                String.new(raw_value)
+              else
+                nil
+              end
 
       self.new(
         create_revision: kv.create_revision,
@@ -25,13 +25,13 @@ module Etcd::Model
         value: value,
         version: kv.version
       )
-    end  
+    end
 
     def initialize(@create_revision : Int64?, @key : String, @lease : Int64?, @mod_revision : Int64?, @value : String?, @version : Int64?)
     end
   end
 
-  struct Range 
+  struct Range
     getter count : Int64 = 0
     getter kvs : Array(Etcd::Model::Kv) = [] of Etcd::Model::Kv
     getter more : Bool = false
@@ -47,8 +47,8 @@ module Etcd::Model
     def initialize(@count : Int64, @kvs : Array(Etcd::Model::Kv), @more : Bool)
     end
   end
-  
-  struct Put 
+
+  struct Put
     getter prev_kv : Kv?
 
     def self.from_grpc(put_response : Etcdserverpb::PutResponse)
@@ -59,7 +59,7 @@ module Etcd::Model
       else
         self.new
       end
-    end  
+    end
 
     def initialize(@prev_kv : Kv? = nil)
     end
@@ -73,8 +73,8 @@ module Etcd::Model
       self.new(
         deleted: delete_response.deleted || 0_i64,
         prev_kvs: (delete_response.prev_kvs || [] of Mvccpb::KeyValue).map { |kv| Etcd::Model::Kv.from_grpc(kv) }
-      )      
-    end  
+      )
+    end
 
     def initialize(@deleted : Int64, @prev_kvs : Array(Etcd::Model::Kv))
     end
@@ -86,19 +86,19 @@ module Etcd::Model
     getter response_delete : Delete?
 
     def self.from_grpc(txn_response : Etcdserverpb::ResponseOp)
-      response_range : Range? = nil 
-      if rr = txn_response.response_range 
-        response_range = Range.from_grpc(rr) 
+      response_range : Range? = nil
+      if rr = txn_response.response_range
+        response_range = Range.from_grpc(rr)
       end
-        
+
       response_put : Put? = nil
-      if rp = txn_response.response_put 
-        response_put = Put.from_grpc(rp) 
+      if rp = txn_response.response_put
+        response_put = Put.from_grpc(rp)
       end
 
       response_delete : Delete? = nil
-      if rd = txn_response.response_delete_range 
-        response_delete = Delete.from_grpc(rd) 
+      if rd = txn_response.response_delete_range
+        response_delete = Delete.from_grpc(rd)
       end
 
       self.new(
@@ -119,7 +119,7 @@ module Etcd::Model
     def self.from_grpc(txn_response : Etcdserverpb::TxnResponse)
       self.new(
         succeeded: txn_response.succeeded || false,
-        responses: (txn_response.responses || [] of Etcdserverpb::ResponseOp).map { |response| 
+        responses: (txn_response.responses || [] of Etcdserverpb::ResponseOp).map { |response|
           TxnResponse.from_grpc(response)
         }
       )
