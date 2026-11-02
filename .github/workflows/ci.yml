@@ -27,15 +27,21 @@ jobs:
             stable: false
             etcd: 3.5.1
     runs-on: ubuntu-latest
-    services:
-      etcd:
-        image: bitnami/etcd:${{ matrix.etcd }}
-        ports:
-          - 2379:2379
-          - 2380:2380
-        env:
-          ALLOW_NONE_AUTHENTICATION: "yes"
     steps:
+      # Service containers can't take a command, and the official image only listens on localhost by default
+      - name: Start etcd
+        run: |
+          docker run -d --name etcd -p 2379:2379 -p 2380:2380 quay.io/coreos/etcd:v${{ matrix.etcd }} \
+            /usr/local/bin/etcd --name ci --data-dir /etcd-data \
+            --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://127.0.0.1:2379 \
+            --listen-peer-urls http://0.0.0.0:2380 --initial-advertise-peer-urls http://127.0.0.1:2380 \
+            --initial-cluster ci=http://127.0.0.1:2380
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:2379/health && exit 0
+            sleep 1
+          done
+          docker logs etcd
+          exit 1
       - uses: crystal-lang/install-crystal@v1.5.3
         with:
           crystal: ${{ matrix.crystal }}
