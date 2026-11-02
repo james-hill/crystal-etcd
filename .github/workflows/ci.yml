@@ -42,9 +42,9 @@ jobs:
           done
           docker logs etcd
           exit 1
-      - uses: crystal-lang/install-crystal@v1.5.3
+      - uses: crystal-lang/install-crystal@v1
         with:
           crystal: ${{ matrix.crystal }}
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: shards install
       - run: crystal spec --order random --tag "~localonly"
