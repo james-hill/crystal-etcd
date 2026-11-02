@@ -11,8 +11,9 @@ class Etcd::Cluster
   def member_add(is_learner : Bool, peer_urls : Array(String))
     @api.with_retry do
       response = stub.member_add(Etcdserverpb::MemberAddRequest.new(is_learner: is_learner, peer_urls: peer_urls))
+      added = response.member || raise Etcd::Error.new("etcd answered member_add without the member it added")
       Model::MemberAdd.new(
-        member: Model::Member.from_grpc(response.member),
+        member: Model::Member.from_grpc(added),
         members: (response.members || [] of Etcdserverpb::Member).map { |member| Model::Member.from_grpc(member) },
       )
     end

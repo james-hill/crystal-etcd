@@ -12,7 +12,10 @@ class Etcd::Client
   getter password : String? = nil
   getter tls_context : HTTP::Client::TLSContext
 
-  delegate close, to: api.connection
+  # connection is nilable in GRPC::Config, though a constructed client always has one
+  def close
+    api.connection.try(&.close)
+  end
 
   def initialize(
     url : URI,
