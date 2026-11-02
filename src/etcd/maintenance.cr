@@ -18,11 +18,11 @@ class Etcd::Maintenance
       request.member_id = mid
     end
 
-    (stub.alarm(request).alarms || [] of Etcdserverpb::AlarmMember).map do |alarm|
-      if type = alarm.alarm
+    (stub.alarm(request).alarms || [] of Etcdserverpb::AlarmMember).map do |member|
+      if type = member.alarm
         Model::Alarm.new(
           alarm: Model::AlarmType.from_grpc(type),
-          member_id: alarm.member_id,
+          member_id: member.member_id,
         )
       else
         raise "Alarm has no type"

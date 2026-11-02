@@ -27,6 +27,7 @@ jobs:
             stable: false
             etcd: 3.5.1
     runs-on: ubuntu-latest
+    continue-on-error: ${{ !matrix.stable }}
     steps:
       # Service containers can't take a command, and the official image only listens on localhost by default
       - name: Start etcd
