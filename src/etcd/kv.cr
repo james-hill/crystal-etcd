@@ -70,28 +70,37 @@ module Etcd
 
     # Queries a range of keys
     # Note: base64_keys is deprected now that we use gRPC
-    def range(key, range_end : Slice(UInt8)? = nil, limit : Int64 = 0_i64, base64_keys : Bool = true)
-      request = Etcdserverpb::RangeRequest.new(
-        key: key.to_slice,
-        range_end: range_end,
-        limit: limit,
-      )
+    # A non-zero `revision` reads the store as it was then, raising `CompactedError` if
+    # etcd has compacted it away; 0 reads the latest.
+    def range(key, range_end : Slice(UInt8)? = nil, limit : Int64 = 0_i64, base64_keys : Bool = true, revision : Int64 = 0_i64)
+      request = self.class.range_request(key, range_end, limit, revision)
       @api.with_retry do
         Model::Range.from_grpc(stub.range(request))
       end
+    rescue error : GRPC::BadStatus
+      raise CompactedError.from?(error, revision) || error
     end
 
     # Range that automatically yields each Etcd::Model::Kv
-    def range(key, range_end : Slice(UInt8)? = nil, limit : Int64 = 0_i64, &block)
-      range(key, range_end, limit).kvs.each do |kv|
+    def range(key, range_end : Slice(UInt8)? = nil, limit : Int64 = 0_i64, revision : Int64 = 0_i64, &block)
+      range(key, range_end, limit, revision: revision).kvs.each do |kv|
         yield kv
       end
     end
 
+    def self.range_request(key, range_end : Slice(UInt8)?, limit : Int64, revision : Int64) : Etcdserverpb::RangeRequest
+      Etcdserverpb::RangeRequest.new(
+        key: key.to_slice,
+        range_end: range_end,
+        limit: limit,
+        revision: revision.zero? ? nil : revision,
+      )
+    end
+
     # Query keys beneath a prefix
-    def range_prefix(prefix, limit : Int64 = 0_i64)
+    def range_prefix(prefix, limit : Int64 = 0_i64, revision : Int64 = 0_i64)
       range_end = prefix_range_end prefix
-      range(prefix, range_end, limit)
+      range(prefix, range_end, limit, revision: revision)
     end
 
     # Query all keys >= key
@@ -104,6 +113,51 @@ module Etcd
       @api.with_retry do
         response = stub.txn(Etcdserverpb::TxnRequest.new(compare, success, failure))
         Model::Txn.from_grpc(response).succeeded
+      end
+    end
+
+    # Runs `transaction`'s operations if every one of its compares holds.
+    def txn(transaction : Txn) : Bool
+      txn(transaction.compares, transaction.success)
+    end
+
+    # A typed transaction for `#txn`: `Txn.new.compare_absent(key).put(key, value)`.
+    class Txn
+      getter compares = [] of Etcdserverpb::Compare
+      getter success = [] of Etcdserverpb::RequestOp
+
+      def compare_value(key, value) : self
+        @compares << Etcdserverpb::Compare.new(
+          key: key.to_slice,
+          value: value.to_slice,
+          target: Etcdserverpb::Compare::CompareTarget::VALUE,
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,
+        )
+        self
+      end
+
+      def compare_absent(key) : self
+        @compares << Etcdserverpb::Compare.new(
+          key: key.to_slice,
+          version: 0_i64,
+          target: Etcdserverpb::Compare::CompareTarget::VERSION,
+          result: Etcdserverpb::Compare::CompareResult::EQUAL,
+        )
+        self
+      end
+
+      def put(key, value, lease : Int64 = 0_i64) : self
+        @success << Etcdserverpb::RequestOp.new(
+          request_put: Etcdserverpb::PutRequest.new(key: key.to_slice, value: value.to_slice, lease: lease)
+        )
+        self
+      end
+
+      def delete(key) : self
+        @success << Etcdserverpb::RequestOp.new(
+          request_delete_range: Etcdserverpb::DeleteRangeRequest.new(key: key.to_slice)
+        )
+        self
       end
     end
 

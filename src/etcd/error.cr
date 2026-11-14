@@ -18,6 +18,21 @@ module Etcd
   class FramingError < Error
   end
 
+  # A read at a revision etcd has compacted away; read again at the latest revision.
+  class CompactedError < GRPC::BadStatus
+    getter revision : Int64
+
+    def initialize(@revision : Int64, message : String)
+      super(GRPC::StatusCode::OUT_OF_RANGE, message)
+    end
+
+    def self.from?(error : GRPC::BadStatus, revision : Int64) : self?
+      return nil unless error.code.out_of_range?
+      return nil unless error.message.includes?("required revision has been compacted")
+      new(revision, error.@message || "")
+    end
+  end
+
   class ConnectionError < Error
     def initialize
       super("Could not connect to any etcd endpoints")

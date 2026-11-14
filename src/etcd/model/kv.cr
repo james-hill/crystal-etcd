@@ -1,6 +1,10 @@
 require "./base"
 
 module Etcd::Model
+  def self.header_revision(header : Etcdserverpb::ResponseHeader?) : Int64
+    header.try(&.revision) || 0_i64
+  end
+
   struct Kv
     getter create_revision : Int64?
     getter key : String
@@ -35,48 +39,51 @@ module Etcd::Model
     getter count : Int64 = 0
     getter kvs : Array(Etcd::Model::Kv) = [] of Etcd::Model::Kv
     getter more : Bool = false
+    # The store's revision when the read was served; 0 if the reply had no header.
+    getter revision : Int64 = 0
 
     def self.from_grpc(range_response : Etcdserverpb::RangeResponse)
       self.new(
         count: range_response.count || 0_i64,
         kvs: (range_response.kvs || [] of Mvccpb::KeyValue).map { |kv| Etcd::Model::Kv.from_grpc(kv) },
         more: range_response.more || false,
+        revision: Model.header_revision(range_response.header),
       )
     end
 
-    def initialize(@count : Int64, @kvs : Array(Etcd::Model::Kv), @more : Bool)
+    def initialize(@count : Int64, @kvs : Array(Etcd::Model::Kv), @more : Bool, @revision : Int64 = 0_i64)
     end
   end
 
   struct Put
     getter prev_kv : Kv?
+    getter revision : Int64 = 0
 
     def self.from_grpc(put_response : Etcdserverpb::PutResponse)
-      if prev_kv = put_response.prev_kv
-        self.new(
-          prev_kv: Etcd::Model::Kv.from_grpc(prev_kv)
-        )
-      else
-        self.new
-      end
+      self.new(
+        prev_kv: put_response.prev_kv.try { |kv| Etcd::Model::Kv.from_grpc(kv) },
+        revision: Model.header_revision(put_response.header),
+      )
     end
 
-    def initialize(@prev_kv : Kv? = nil)
+    def initialize(@prev_kv : Kv? = nil, @revision : Int64 = 0_i64)
     end
   end
 
   struct Delete
     getter deleted : Int64 = 0
     getter prev_kvs : Array(Etcd::Model::Kv) = [] of Etcd::Model::Kv
+    getter revision : Int64 = 0
 
     def self.from_grpc(delete_response : Etcdserverpb::DeleteRangeResponse)
       self.new(
         deleted: delete_response.deleted || 0_i64,
-        prev_kvs: (delete_response.prev_kvs || [] of Mvccpb::KeyValue).map { |kv| Etcd::Model::Kv.from_grpc(kv) }
+        prev_kvs: (delete_response.prev_kvs || [] of Mvccpb::KeyValue).map { |kv| Etcd::Model::Kv.from_grpc(kv) },
+        revision: Model.header_revision(delete_response.header),
       )
     end
 
-    def initialize(@deleted : Int64, @prev_kvs : Array(Etcd::Model::Kv))
+    def initialize(@deleted : Int64, @prev_kvs : Array(Etcd::Model::Kv), @revision : Int64 = 0_i64)
     end
   end
 
@@ -115,17 +122,19 @@ module Etcd::Model
   struct Txn
     getter succeeded : Bool = false
     getter responses = [] of TxnResponse
+    getter revision : Int64 = 0
 
     def self.from_grpc(txn_response : Etcdserverpb::TxnResponse)
       self.new(
         succeeded: txn_response.succeeded || false,
         responses: (txn_response.responses || [] of Etcdserverpb::ResponseOp).map { |response|
           TxnResponse.from_grpc(response)
-        }
+        },
+        revision: Model.header_revision(txn_response.header),
       )
     end
 
-    def initialize(@succeeded : Bool, @responses : Array(TxnResponse))
+    def initialize(@succeeded : Bool, @responses : Array(TxnResponse), @revision : Int64 = 0_i64)
     end
   end
 end
