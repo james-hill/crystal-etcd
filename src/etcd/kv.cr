@@ -39,7 +39,7 @@ module Etcd
         ignore_lease: ignore_lease,
       )
 
-      @api.with_retry do
+      @api.with_retry(idempotent: false) do
         response = stub.put(request)
 
         Model::Put.from_grpc(response)
@@ -55,7 +55,7 @@ module Etcd
         prev_kv: prev_kv,
       )
 
-      @api.with_retry do
+      @api.with_retry(idempotent: false) do
         Model::Delete.from_grpc(stub.delete_range(request))
       end
     end
@@ -63,9 +63,7 @@ module Etcd
     # Deletes an entire keyspace prefix
     def delete_prefix(prefix, prev_kv = false)
       range_end = prefix_range_end prefix
-      @api.with_retry do
-        delete(prefix, range_end, prev_kv: prev_kv)
-      end
+      delete(prefix, range_end, prev_kv: prev_kv)
     end
 
     # Queries a range of keys
@@ -110,7 +108,8 @@ module Etcd
     end
 
     def txn(compare : Array(Etcdserverpb::Compare), success : Array(Etcdserverpb::RequestOp), failure = [] of Etcdserverpb::RequestOp)
-      @api.with_retry do
+      # even a read-only txn: simpler than inspecting its operations
+      @api.with_retry(idempotent: false) do
         response = stub.txn(Etcdserverpb::TxnRequest.new(compare, success, failure))
         Model::Txn.from_grpc(response).succeeded
       end
@@ -164,13 +163,17 @@ module Etcd
     # Discards key history older than `revision`.
     #
     # `physical: true` blocks until the compaction has been applied to the backend.
-    # etcd answers an already-compacted revision with OUT_OF_RANGE ("required revision
-    # has been compacted") and a revision past the current one with "is a future revision";
-    # both surface as `GRPC::BadStatus`.
+    #
+    # Unlike other writes, a compaction is retried after a dropped connection: it only moves
+    # forward, so sending it again can't undo another client's work. `CompactedError` therefore
+    # means history before `revision` is already gone, whoever removed it (possibly this call's
+    # own first attempt). A revision past the current one raises `GRPC::BadStatus` ("is a future revision").
     def compaction(physical : Bool, revision : Int64) : Bool
       @api.with_retry do
         stub.compact(Etcdserverpb::CompactionRequest.new(physical: physical, revision: revision)).is_a?(Etcdserverpb::CompactionResponse)
       end
+    rescue error : GRPC::BadStatus
+      raise CompactedError.from?(error, revision) || error
     end
 
     # Non-Standard Requests

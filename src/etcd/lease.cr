@@ -21,7 +21,9 @@ module Etcd
     # Revokes an etcd lease
     # id  Id of lease  Int64
     def revoke(id : Int64)
-      stub.lease_revoke(Etcdserverpb::LeaseRevokeRequest.new(id: id)).is_a?(Etcdserverpb::LeaseRevokeResponse)
+      @api.with_retry(idempotent: false) do
+        stub.lease_revoke(Etcdserverpb::LeaseRevokeRequest.new(id: id)).is_a?(Etcdserverpb::LeaseRevokeResponse)
+      end
     end
 
     # /kv/lease/timetolive
@@ -30,9 +32,11 @@ module Etcd
     # id            id of lease                         Int64
     # query_keys    query all the lease's keys for ttl  Bool
     def timetolive(id : Int64, query_keys = false)
-      Model::TimeToLive.from_grpc(
-        stub.lease_time_to_live(Etcdserverpb::LeaseTimeToLiveRequest.new(id: id, keys: query_keys))
-      )
+      @api.with_retry do
+        Model::TimeToLive.from_grpc(
+          stub.lease_time_to_live(Etcdserverpb::LeaseTimeToLiveRequest.new(id: id, keys: query_keys))
+        )
+      end
     end
 
     # /lease/grant
@@ -40,16 +44,20 @@ module Etcd
     # ttl   ttl of granted lease                            Int64
     # id    id of 0 prompts etcd to assign any id to lease  UInt64
     def grant(ttl : Int64 = @ttl, id = 0)
-      Model::Grant.from_grpc(
-        stub.lease_grant(Etcdserverpb::LeaseGrantRequest.new(ttl: ttl, id: id))
-      )
+      @api.with_retry(idempotent: false) do
+        Model::Grant.from_grpc(
+          stub.lease_grant(Etcdserverpb::LeaseGrantRequest.new(ttl: ttl, id: id))
+        )
+      end
     end
 
     # /lease/keepalive
     # Requests persistence of lease.
     # Must be invoked periodically to avoid key loss.
     def keep_alive(id : Int64) : Int64?
-      stub.lease_keep_alive(Etcdserverpb::LeaseKeepAliveRequest.new(id: id)).ttl
+      @api.with_retry do
+        stub.lease_keep_alive(Etcdserverpb::LeaseKeepAliveRequest.new(id: id)).ttl
+      end
     end
   end
 end

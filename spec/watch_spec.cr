@@ -2,6 +2,23 @@ require "./helper"
 
 module Etcd
   describe Watch do
+    it "answers a progress request on an idle watch with the current revision" do
+      key = "#{TEST_PREFIX}/idle"
+      client = Etcd.from_env
+      client.kv.put(key, "a")
+      current = client.kv.range(key).revision
+
+      watcher = client.watch.watch(key) { }
+      spawn { watcher.start }
+      wait_for { watcher.watching? && !watcher.watch_id.nil? }
+
+      watcher.request_progress
+      wait_for { !watcher.progress_revision.nil? }
+
+      watcher.progress_revision.should eq current
+      watcher.cancel
+    end
+
     it "watches a key" do
       ttl = 5_i64
 

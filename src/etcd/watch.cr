@@ -115,6 +115,11 @@ class Etcd::Watch
     getter watch_id : Int64? = nil
     getter stream_id : Int32? = nil
 
+    # Header revision of the latest response that carried no events, such as a progress reply
+    getter progress_revision : Int64? = nil
+
+    @stream : GRPC::Client::OpenStream? = nil
+
     def initialize(
       @key,
       @api = Etcd::Api,
@@ -195,7 +200,12 @@ class Etcd::Watch
         @start_revision = revision + 1
       end
 
-      if raw_events = response.events
+      raw_events = response.events
+      if !response.created && (raw_events.nil? || raw_events.empty?)
+        @progress_revision = response.header.try(&.revision)
+      end
+
+      if raw_events
         events = raw_events.map { |grpc_event| Model::WatchEvent.from_grpc(grpc_event) }.compact
         unless events.empty? || self.event_channel.closed?
           self.event_channel.send(events)
@@ -229,9 +239,9 @@ class Etcd::Watch
 
           @api.max_retries = 0
           if (http2 = @api.config.http2) && !http2.connection.closed?
-            channel = http2.open_stream(headers, data: data)
+            stream = @stream = http2.open_stream(headers, data: data)
 
-            consume(channel) do |response|
+            consume(stream.receive) do |response|
               # Anything from etcd means the connection is healthy again
               reconnect_seconds = RECONNECT_SECONDS
               break unless handle_response(response)
@@ -258,10 +268,32 @@ class Etcd::Watch
       end
     end
 
+    # Asks etcd for a progress reply: an empty response whose header revision is the store's
+    # current revision, read from `progress_revision` once it arrives
+    def request_progress : Nil
+      send_request(Etcdserverpb::WatchRequest.new(progress_request: Etcdserverpb::WatchProgressRequest.new))
+    end
+
+    # Tells etcd to cancel the watch, then stops the watcher
+    def cancel : Nil
+      # etcd numbers a stream's watches from 0 and the creation ack omits a zero id
+      send_request(Etcdserverpb::WatchRequest.new(cancel_request: Etcdserverpb::WatchCancelRequest.new(watch_id: watch_id || 0_i64)))
+    ensure
+      stop
+    end
+
+    private def send_request(request : Etcdserverpb::WatchRequest) : Nil
+      stream = @stream
+      raise Etcd::WatchError.new("No open watch stream for `#{key}`") if stream.nil? || stream.closed?
+      stream.send(GRPC.encode_protobuf(request))
+    end
+
     # Close the client and stop the watcher
     def stop
       @watching = false
       self.event_channel.close
+      # ends `start` now instead of at the next frame
+      @stream.try(&.close)
     end
   end
 end

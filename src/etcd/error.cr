@@ -33,6 +33,14 @@ module Etcd
     end
   end
 
+  # A write's connection failed after the request may have reached etcd: it may or may not have
+  # been applied. Read back to find out; the request was not replayed.
+  class Unconfirmed < Error
+    def initialize(cause : Exception)
+      super("etcd write unconfirmed: #{cause.message}", cause: cause)
+    end
+  end
+
   class ConnectionError < Error
     def initialize
       super("Could not connect to any etcd endpoints")

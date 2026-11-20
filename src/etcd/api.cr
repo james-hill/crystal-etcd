@@ -22,6 +22,9 @@ class Etcd::Api
   # If nil, will retry all endpoints
   setter max_retries : Int32? = nil
 
+  # How long a unary call waits for etcd's answer before the member is treated as unresponsive
+  property request_timeout : Time::Span = GRPC::Client::REQUEST_TIMEOUT
+
   getter! config : GRPC::Config?
 
   # If we're using RBAC with username/password (NOT TLS cert common name auth) then we need a token
@@ -72,9 +75,11 @@ class Etcd::Api
     @config ||= GRPC::Config.new(http2: create_http2_client)
   end
 
-  # A fresh connection carries no session, so re-run username/password auth when the client has one
-  def reconnect
+  # A fresh connection carries no session, so re-run username/password auth when the client has one.
+  # *rotate* moves to the next member first, so an unresponsive one isn't dialled again.
+  def reconnect(rotate : Bool = true)
     config.http2.try(&.close)
+    rotate_endpoints if rotate
     config.http2 = create_http2_client
     reauthenticate
   end
@@ -96,6 +101,7 @@ class Etcd::Api
             dns_timeout: @dns_timeout,
             connect_timeout: @connect_timeout,
           )
+          client.request_timeout = @request_timeout
           if token = @auth_token
             client.default_headers["Authorization"] = token
           end
@@ -150,15 +156,21 @@ class Etcd::Api
     end
   end
 
-  # wraps a block and attempts to deal with down nodes and expired auth tokens
-  def with_retry(&)
+  # Wraps a block and attempts to deal with down nodes and expired auth tokens.
+  #
+  # Pass `idempotent: false` for writes: once the request may have reached etcd, a transport
+  # error raises `Etcd::Unconfirmed` instead of replaying it, since etcd may already have applied it.
+  # A write replays only if replaying can't undo another client's write in between (compaction).
+  def with_retry(idempotent : Bool = true, &)
     timed_out = false
     loop do
+      sent = false
       begin
         if config.http2.try(&.closed?)
           Log.warn { "Underlying http2 connection is closed" }
           raise Etcd::ConnectionError.new
         else
+          sent = true
           result = yield
 
           # success so reset the retry counter
@@ -167,12 +179,14 @@ class Etcd::Api
           return result
         end
       rescue error : IO::TimeoutError
+        unconfirmed!(error) if sent && !idempotent
         # the connection was up and the server did not answer: try one other endpoint, then give up
         # rather than stall for max_retries timeouts in a row
         raise error if timed_out
         timed_out = true
         reconnect
       rescue error : IO::Error | Etcd::ConnectionError | Channel::ClosedError
+        unconfirmed!(error) if sent && !idempotent
         if @retries_performed < max_retries
           reconnect
           @retries_performed += 1
@@ -180,7 +194,8 @@ class Etcd::Api
           raise error
         end
       rescue error : GRPC::BadStatus
-        # if the error is UNAUTHENTICATED then we may just need to rotate the auth token
+        # if the error is UNAUTHENTICATED then we may just need to rotate the auth token;
+        # etcd refused the request, so retrying a write is safe
         if error.code == GRPC::StatusCode::UNAUTHENTICATED
           Log.info { "Attempting to rotate auth token at #{url} because of GRPC error: UNAUTHENTICATED" }
           if @retries_performed < max_retries
@@ -197,5 +212,15 @@ class Etcd::Api
     end
 
     raise "Failed to reconnect"
+  end
+
+  # Drops the replay but not the reconnect, so the next call has a connection
+  private def unconfirmed!(error : Exception) : NoReturn
+    begin
+      reconnect
+    rescue reconnect_error
+      Log.warn(exception: reconnect_error) { "Reconnect after an unconfirmed write failed" }
+    end
+    raise Etcd::Unconfirmed.new(error)
   end
 end

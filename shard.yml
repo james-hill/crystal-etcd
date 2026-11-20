@@ -12,7 +12,7 @@ authors:
 dependencies:
   grpc:
     github: atlantis/grpc
-    commit: 6243cd901c9721ef72b509c6ac63b066f1a6869f
+    commit: ee17344b335ee7ecb44903142f0c5ec851db246a
 
 development_dependencies:
   # Linter

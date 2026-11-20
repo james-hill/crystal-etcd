@@ -8,7 +8,7 @@ private class RetryProbeApi < Etcd::Api
     @config ||= GRPC::Config.new
   end
 
-  def reconnect
+  def reconnect(rotate : Bool = true)
     @reconnects += 1
   end
 end

@@ -9,7 +9,7 @@ class Etcd::Cluster
 
   # POST cluster/member/add
   def member_add(is_learner : Bool, peer_urls : Array(String))
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       response = stub.member_add(Etcdserverpb::MemberAddRequest.new(is_learner: is_learner, peer_urls: peer_urls))
       added = response.member || raise Etcd::Error.new("etcd answered member_add without the member it added")
       Model::MemberAdd.new(
@@ -31,7 +31,7 @@ class Etcd::Cluster
 
   # POST cluster/member/promote
   def member_promote(id : UInt64)
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       response = stub.member_promote(Etcdserverpb::MemberPromoteRequest.new(id: id))
       (response.members || [] of Etcdserverpb::Member).map do |member|
         Model::Member.from_grpc(member)
@@ -41,7 +41,7 @@ class Etcd::Cluster
 
   # POST cluster/member/remove
   def member_remove(id : UInt64)
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       response = stub.member_remove(Etcdserverpb::MemberRemoveRequest.new(id: id))
       (response.members || [] of Etcdserverpb::Member).map do |member|
         Model::Member.from_grpc(member)
@@ -55,7 +55,7 @@ class Etcd::Cluster
       id: id,
       peer_urls: peer_urls,
     )
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       (stub.member_update(request).members || [] of Etcdserverpb::Member).map do |member|
         Model::Member.from_grpc(member)
       end

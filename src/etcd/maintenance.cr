@@ -57,12 +57,12 @@ class Etcd::Maintenance
       ":path"        => "/etcdserverpb.Maintenance/Snapshot",
       "content-type" => "application/grpc",
     }
-    channel = http2.open_stream(headers, data: GRPC.encode_protobuf(Etcdserverpb::SnapshotRequest.new))
+    stream = http2.open_stream(headers, data: GRPC.encode_protobuf(Etcdserverpb::SnapshotRequest.new))
     messages = MessageBuffer(Etcdserverpb::SnapshotResponse).new
 
     chunks = 0
     data_done = false
-    while payload = channel.receive?
+    while payload = stream.receive.receive?
       messages << payload
       while response = messages.next_message
         chunks += 1
@@ -76,6 +76,9 @@ class Etcd::Maintenance
     end
 
     raise Etcd::Error.new "Snapshot stream closed before etcd sent any data" if chunks.zero?
+  ensure
+    # a consumer that raised leaves the stream open otherwise
+    stream.try(&.close)
   end
 
   # Writes a backend snapshot to `io`, returning the number of bytes written
@@ -90,7 +93,7 @@ class Etcd::Maintenance
 
   # Queries status of etcd instance
   def status
-    response = stub.status(Etcdserverpb::StatusRequest.new)
+    response = @api.with_retry { stub.status(Etcdserverpb::StatusRequest.new) }
 
     Model::Status.new(
       db_size: response.db_size,

@@ -12,14 +12,14 @@ class Etcd::Auth
 
   # auth/disable
   def disable
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.auth_disable(Etcdserverpb::AuthDisableRequest.new).is_a?(Etcdserverpb::AuthDisableResponse)
     end
   end
 
   # auth/enable
   def enable
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.auth_enable(Etcdserverpb::AuthEnableRequest.new).is_a?(Etcdserverpb::AuthEnableResponse)
     end
   end
@@ -40,14 +40,14 @@ class Etcd::Auth
   def role_add(name : String)
     validate!(name)
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.role_add(Etcdserverpb::AuthRoleAddRequest.new(name: name)).is_a?(Etcdserverpb::AuthRoleAddResponse)
     end
   end
 
   # auth/role/delete
   def role_delete(role : String)
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.role_delete(Etcdserverpb::AuthRoleDeleteRequest.new(role: role)).is_a?(Etcdserverpb::AuthRoleDeleteResponse)
     end
   end
@@ -83,7 +83,7 @@ class Etcd::Auth
       ),
     )
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.role_grant_permission(request).is_a?(Etcdserverpb::AuthRoleGrantPermissionResponse)
     end
   end
@@ -111,7 +111,7 @@ class Etcd::Auth
       range_end: range_end,
     )
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.role_revoke_permission(request).is_a?(Etcdserverpb::AuthRoleRevokePermissionResponse)
     end
   end
@@ -131,7 +131,7 @@ class Etcd::Auth
       options: Authpb::UserAddOptions.new(no_password: no_password),
     )
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.user_add(request).is_a?(Etcdserverpb::AuthUserAddResponse)
     end
   end
@@ -145,7 +145,7 @@ class Etcd::Auth
       password: password,
     )
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.user_change_password(request).is_a?(Etcdserverpb::AuthUserChangePasswordResponse)
     end
   end
@@ -154,7 +154,7 @@ class Etcd::Auth
   def user_delete(name : String)
     validate!(name)
 
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.user_delete(Etcdserverpb::AuthUserDeleteRequest.new(name: name)).is_a?(Etcdserverpb::AuthUserDeleteResponse)
     end
   end
@@ -170,7 +170,7 @@ class Etcd::Auth
 
   # auth/user/grant
   def user_grant(role : String, user : String)
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.user_grant_role(Etcdserverpb::AuthUserGrantRoleRequest.new(user: user, role: role)).is_a?(Etcdserverpb::AuthUserGrantRoleResponse)
     end
   end
@@ -185,7 +185,7 @@ class Etcd::Auth
   # auth/user/revoke
   def user_revoke(name : String, role : String)
     validate!(name)
-    @api.with_retry do
+    @api.with_retry(idempotent: false) do
       stub.user_revoke_role(Etcdserverpb::AuthUserRevokeRoleRequest.new(user: name, role: role)).is_a?(Etcdserverpb::AuthUserRevokeRoleResponse)
     end
   end
