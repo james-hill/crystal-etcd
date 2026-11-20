@@ -179,3 +179,52 @@ describe "Etcd::Api against a fake member" do
     end
   end
 end
+
+# Accepts connections and answers each with an HTTP/1.1 response, as a non-etcd listener would
+private class NotHttp2Server
+  @server = TCPServer.new("127.0.0.1", 0)
+  @clients = [] of TCPSocket
+
+  def initialize
+    spawn do
+      while socket = @server.accept?
+        @clients << socket
+        socket.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".to_slice) rescue nil
+      end
+    end
+  end
+
+  def url : URI
+    URI.parse("http://127.0.0.1:#{@server.local_address.port}")
+  end
+
+  def close
+    @server.close rescue nil
+    @clients.each { |client| client.close rescue nil }
+  end
+end
+
+describe "Etcd::Api connecting" do
+  it "moves to the next member when the first one doesn't speak HTTP/2" do
+    bad = NotHttp2Server.new
+    good = FakeEtcd.new { |_request| answer(Etcdserverpb::RangeResponse.new) }
+    client = Etcd::Client.new([bad.url, good.url])
+
+    client.kv.range("key").kvs.should be_empty
+    good.connections.should eq(1)
+  ensure
+    bad.try(&.close)
+    good.try(&.close)
+  end
+
+  it "raises ConnectionError carrying the TLS error when no member completes a handshake" do
+    servers = Array.new(2) { NotHttp2Server.new }
+    # the client connects as it is constructed
+    error = expect_raises(Etcd::ConnectionError) do
+      Etcd::Client.new(servers.map(&.url), tls_context: OpenSSL::SSL::Context::Client.new)
+    end
+    error.cause.should be_a(OpenSSL::SSL::Error)
+  ensure
+    servers.try(&.each(&.close))
+  end
+end

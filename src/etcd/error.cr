@@ -42,8 +42,8 @@ module Etcd
   end
 
   class ConnectionError < Error
-    def initialize
-      super("Could not connect to any etcd endpoints")
+    def initialize(cause : Exception? = nil)
+      super("Could not connect to any etcd endpoints", cause: cause)
     end
   end
 end

@@ -91,6 +91,7 @@ class Etcd::Api
   end
 
   protected def create_http2_client
+    last_error = nil
     @endpoints.size.times do
       begin
         if (host = url.host) && (port = url.port)
@@ -108,13 +109,15 @@ class Etcd::Api
 
           return client
         end
-      rescue error : IO::Error
+      rescue error : IO::Error | OpenSSL::SSL::Error | HTTP2::Error
+        # a bad certificate or a non-HTTP/2 listener is often one member's fault, so try the others
+        last_error = error
         Log.warn(exception: error) { "Error connecting to #{url}... will rotate and try again, if possible" }
         rotate_endpoints
       end
     end
 
-    raise Etcd::ConnectionError.new
+    raise Etcd::ConnectionError.new(cause: last_error)
   end
 
   def connection
